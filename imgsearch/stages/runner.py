@@ -27,14 +27,15 @@ def pending_images(conn: sqlite3.Connection, stage: Stage) -> list[ImageRecord]:
         " ORDER BY i.id"
     )
     rows = conn.execute(sql, (stage.name, stage.version, *stage.requires))
-    return [ImageRecord(*row) for row in rows]
+    return [ImageRecord(**dict(row)) for row in rows]
 
 
 def run_stage(stage: Stage, ctx: Context) -> dict[str, int]:
     """Run `stage` on every pending image. Returns {"done": n, "failed": m}.
 
     One image failing is recorded and does not stop the others. The stage is loaded
-    only if there is work, and always unloaded afterwards.
+    only if there is work, and always unloaded afterwards. A failed image may keep
+    partial results (e.g. a committed save_ocr); the next run overwrites them.
     """
     counts = {"done": 0, "failed": 0}
     images = pending_images(ctx.conn, stage)
@@ -48,7 +49,6 @@ def run_stage(stage: Stage, ctx: Context) -> dict[str, int]:
             try:
                 stage.run(image, ctx)
             except Exception as e:  # the plan requires per-image failures to be recorded
-                ctx.conn.rollback()  # drop any half-written results from this image
                 error = f"{type(e).__name__}: {e}"
                 set_status(ctx.conn, image.id, stage.name, stage.version, "failed", error)
                 counts["failed"] += 1

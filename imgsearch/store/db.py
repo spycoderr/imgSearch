@@ -23,11 +23,19 @@ def connect(config: Config) -> sqlite3.Connection:
     return conn
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """Apply each migrations/NNN_*.sql newer than PRAGMA user_version, in order."""
-    current = conn.execute("PRAGMA user_version").fetchone()[0]
-    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+def migrate(conn: sqlite3.Connection, migrations_dir: Path = MIGRATIONS_DIR) -> None:
+    """Apply each NNN_*.sql in `migrations_dir` newer than PRAGMA user_version, in order."""
+    migrations: dict[int, Path] = {}
+    for path in sorted(migrations_dir.glob("*.sql")):
         number = int(path.name.split("_")[0])
+        if number in migrations:
+            raise ValueError(
+                f"duplicate migration number {number}: {migrations[number].name}, {path.name}"
+            )
+        migrations[number] = path
+
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    for number, path in sorted(migrations.items()):
         if number <= current:
             continue
         sql = path.read_text(encoding="utf-8")

@@ -51,10 +51,10 @@ class Config(_Strict):
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
-    """Read a config file. Relative paths resolve against the file's folder."""
+    """Read a config file. `~` is expanded; relative paths resolve against the file's folder."""
     path = path.resolve()
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     for key in ("originals_root", "derivatives_root", "db_path"):
         if key in data:  # a missing key is reported by validation below
-            data[key] = path.parent / data[key]
+            data[key] = path.parent / Path(data[key]).expanduser()
     return Config.model_validate(data)

@@ -1,4 +1,7 @@
 import sqlite3
+from pathlib import Path
+
+import pytest
 
 from imgsearch.config import Config
 from imgsearch.store.db import MIGRATIONS_DIR, connect, migrate
@@ -27,3 +30,12 @@ def test_migrations_are_idempotent(config: Config):
 def test_sqlite_vec_and_foreign_keys(conn: sqlite3.Connection):
     assert conn.execute("SELECT vec_version()").fetchone()[0].startswith("v")
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+
+
+def test_duplicate_migration_number_is_an_error(conn: sqlite3.Connection, tmp_path: Path):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "001_a.sql").write_text("SELECT 1;")
+    (migrations / "001_b.sql").write_text("SELECT 1;")
+    with pytest.raises(ValueError, match="duplicate migration number 1"):
+        migrate(conn, migrations)

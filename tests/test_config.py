@@ -47,3 +47,11 @@ def test_default_config_ignores_current_directory(tmp_path: Path, monkeypatch: p
     monkeypatch.chdir(tmp_path)
     config = load_config()
     assert config.originals_root == PROJECT_ROOT / "data" / "originals"
+
+
+def test_home_is_expanded(config_path: Path):
+    text = config_path.read_text().replace(
+        "originals_root: data/originals", "originals_root: ~/photos"
+    )
+    config_path.write_text(text)
+    assert load_config(config_path).originals_root == Path.home() / "photos"

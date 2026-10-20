@@ -23,12 +23,20 @@ def set_status(
         )
 
 
-def status_counts(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
-    """Return {stage: {state: count}} for every stage with at least one row."""
+def status_counts(conn: sqlite3.Connection, versions: dict[str, str]) -> dict[str, dict[str, int]]:
+    """Return {stage: {state: count}} for every stage with at least one row.
+
+    Rows whose version differs from `versions[stage]` are counted as "outdated",
+    whatever their state, since the runner will redo them.
+    """
     counts: dict[str, dict[str, int]] = {}
     rows = conn.execute(
-        "SELECT stage, state, COUNT(*) FROM stage_status GROUP BY stage, state ORDER BY stage"
+        "SELECT stage, state, version, COUNT(*) FROM stage_status"
+        " GROUP BY stage, state, version ORDER BY stage"
     )
-    for stage, state, n in rows:
-        counts.setdefault(stage, {})[state] = n
+    for stage, state, version, n in rows:
+        if stage in versions and version != versions[stage]:
+            state = "outdated"
+        by_state = counts.setdefault(stage, {})
+        by_state[state] = by_state.get(state, 0) + n
     return counts

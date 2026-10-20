@@ -95,7 +95,8 @@ uv run imgsearch search "goa wali pizza"      # hybrid search, top 5 (M5; rewrit
 
 `status` creates the database on first run. Only `status` exists so far; the others are
 *(planned)*. On a fresh DB it prints zeros for every configured stage; `not run` counts
-images with no row for that stage yet.
+images with no row for that stage yet; `outdated` counts rows from a stage version other
+than the one in `config.yaml` (they re-run on the next run of that stage).
 
 Each task adds a section here explaining how to run its part.
 
@@ -130,6 +131,7 @@ uv run ruff format . && uv run ruff check --fix .
   `config.stages`), `requires`, `load(ctx)`, `run(image, ctx)` and `unload()`. Run it with
   `run_stage(stage, Context(config, conn))`. The runner picks images whose row for the stage
   is missing, not `done`, or from another version, and whose `requires` stages are `done`.
+  Bumping an upstream stage's version does not re-run downstream stages; bump those too.
   A failing image is recorded as `failed` with the error text, and the others continue.
   `unload()` is always called, even if `load()` failed.
 - Tests use a temp config and DB per test (fixtures in `tests/conftest.py`).

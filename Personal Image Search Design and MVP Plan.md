@@ -202,6 +202,7 @@ Deviations from the sketches above, with the reason. The code is the reference f
 - **M0 – runner re-run rule.** An image is picked when its stage row is missing, in any state other than `done` (failed, or `running` left by a crash), or has a different version. `requires` checks only that the upstream stage is `done`, not its version.
 - **M0 – `embeddings` is a plain table** `(image_id, model, vec BLOB, PRIMARY KEY(image_id, model))`, not a sqlite-vec virtual table. sqlite-vec's distance functions scan it, which is fast enough at this library size, and a model swap can change the vector size without a schema change. Revisit with D1 if vector search gets slow.
 - **M0 – one FTS5 table** `text_fts(image_id UNINDEXED, kind UNINDEXED, text)` with `kind` = `ocr` or `caption`. Stages write through `store.text.save_ocr` / `save_caption`, which update the base row and the FTS row in one transaction; no stage touches `text_fts` directly.
+- **M0 – `text_fts` deletes scan the table.** Replacing a row deletes by `image_id` and `kind`, which are `UNINDEXED` columns, so each delete scans the whole FTS table. Fine at MVP size; revisit in P2 (e.g. key FTS rows by rowid).
 - **M0 – schema constraints.** The plan's columns are kept as listed, plus foreign keys to `images(id)`, `NOT NULL` on keys and text columns, and a `CHECK` on `stage_status.state`. Schema changes are numbered `.sql` files in `imgsearch/store/migrations/`, tracked with `PRAGMA user_version` and applied when the DB is opened.
 
 ## Query flow

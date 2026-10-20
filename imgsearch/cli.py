@@ -11,7 +11,7 @@ from imgsearch.store.status import status_counts
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
-STATES = ["done", "failed", "running", "pending"]
+STATES = ["done", "failed", "running", "pending", "outdated"]
 
 
 @app.callback()
@@ -29,7 +29,7 @@ def status(ctx: typer.Context) -> None:
     config: Config = ctx.obj
     conn = connect(config)
     total = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
-    counts = status_counts(conn)
+    counts = status_counts(conn, config.stages)
     conn.close()
 
     typer.echo(f"db: {config.db_path}")
