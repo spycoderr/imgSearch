@@ -74,7 +74,8 @@ Never use `pip install`. Never run in Docker.
 4. Nothing written outside the project except the HF and Ollama caches; nothing
    written under `originals_root`.
 5. Checked against `docs/acceptance/<task>.md`, if one exists.
-6. Report written to `docs/reports/<task>.md` (e.g. `M2.md`) and committed with the work.
+6. Report written to `docs/reports/<task>.md` (e.g. `M2.md`) and committed with the work;
+   hand-back `docs/reports/<task>-handback.md` written and committed last.
 
 ## Task reports (`docs/reports/`)
 
@@ -86,3 +87,8 @@ Never use `pip install`. Never run in Docker.
   tasks>"), Acceptance checklist status, Files changed. State facts and numbers, not opinions.
 - Never edit another task's report. To correct or follow up on one, add a dated note under
   "Follow-ups" in your own report.
+- Write key results (benchmark numbers, model comparisons, query checks) into your report as
+  soon as you have them, so they survive if the session stops.
+- **Hand-back last:** after the final commit, write `docs/reports/<task>-handback.md`: the short
+  message you send back to the user, one section per phase, saved as sent. Commit it. Its
+  appearance signals the task is complete, so it must come after everything else.
