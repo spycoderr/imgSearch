@@ -368,3 +368,103 @@ queries:
       - 7d32967d1fec89faf72844347585880bc59a3ea891e46a1a1e505eed9df734e5
     # files: IMG_20181217_165916.jpg
     note: "printed Devanagari; OCR is English-only"
+  - id: user-car
+    query: "give me images inside car"
+    language: english
+    type: scene
+    expected_image_ids:
+      - 0241881a284fa299fd1c852925e68112d5d0327df321c76bf185e01e31836e50
+    # files: IMG_20170813_111023.jpg
+    note: "written by the user. Only #56 (selfie against a padded seat) looks like a car interior; user to confirm"
+  - id: user-socsci-homework
+    query: "return me the homework related to social science"
+    language: english
+    type: text
+    expected_image_ids:
+      - 46d1e2a2817b215e0d5aca14b90186f7aa1f2529248cc8cc4a4c1a1520b50495
+      - e57cf5615697fb4c023e9859b504f5de11f779c5ecf34d27ddd1446a6c99f344
+      - 765fa4b7e3eaf3fea68a35689a4013b4f474faa572f786e5a0cef33c5591ee10
+      - f78e471da6bd0e286b258e650f77ff4971a73579111d1f969f4c307ab48a9cdd
+      - e86bab23fade1604db51e403ac2231d5fb9a2938e15e53d7da73b84b833d9a51
+      - f2cdc40a08ec8ced4866cb72f8d2a2bb1bed8bd4e682936d75036ca15f983289
+      - 5d45ae9116ad0e49279cfbe28bdba4e7522130bba9cf282aeb7da844a093905c
+      - 59387d6d353d5bbf140f658d5717056a7e1e2f5fad0c9d563b4fc8a0d950244e
+      - c16dc8e5afbc7bdc2cb9fc9bc11cc10a4723164d4208266fa7bd1b0ad16a3396
+      - 5187a23940d07c79bc43e35ca3fb330a40374d5f59816553bfed888d3913a811
+      - ec2bc4e05ddc1d51c6bb51bd87f597b9120a753de1ca769cea2a08dbceff2745
+      - 5ce788c46f7726f3fc0c2f0af88205a9751a41cfdf85df5aeac815ee63f309d0
+      - 3e2bddb7206ff95d86f4fe4200a98e5c1f0ac6c930758ffb872c8a5298faa4f3
+      - 701de05104b4f0204a4f133c0a30c032472160f2900f66cc3052901adba22116
+      - 32b1f4a4e00fde1e055eba6d6a57d215e3b7cb27d26800a3628138dd3ec66ced
+      - 0fcfe7c9432d6888d1f4b70399eabf73012e601589a2dc579d2df5d7d446f7bd
+    # files: IMG_20190423_182500.jpg, IMG_20190423_182503.jpg, IMG_20190423_182505.jpg, IMG_20190423_182511.jpg, IMG_20190423_182514.jpg, IMG_20190423_182515.jpg, IMG_20190423_182519.jpg, IMG_20190506_184159.jpg, IMG_20190506_184207.jpg, IMG_20190506_184210.jpg, IMG_20190506_184214.jpg, IMG_20190506_184222.jpg, IMG_20190506_184228.jpg, IMG_20190506_184233.jpg, IMG_20190506_184239.jpg, IMG_20190506_184243.jpg
+    note: "written by the user. Handwritten Class IX geography (#113-119) and printed social science sheets (#121-129); excludes the science and English pages"
+  - id: user-wedding-dress
+    query: "give me some images of people dressed for wedding"
+    language: english
+    type: scene
+    expected_image_ids:
+      - aa8e7421468c070b1801f3e90c69d049e0cbf800313d6c0bc87246127ce7d18f
+      - 3a3f92a0667a92660205c80977c5f23cb8ee2346f8f4879ae70c5e49da993d26
+      - 7f4bc5df8d23395fdeadfc9b9794ce2629ba4a587a4e4fb285c35831ad09ae0c
+    # files: IMG_20181119_222926.jpg, IMG_20181119_222928.jpg, IMG_20181119_223058.jpg
+    note: "written by the user. The evening lawn party; same photos as hi-kal-shaadi"
+  - id: user-pet-dog
+    query: "return me images of my pet dog"
+    language: english
+    type: object
+    expected_image_ids:
+      - 9095de421d2f67ea8f3387583d7b1147438c4505d925d07637c8bcc8bc678243
+      - ba6d8f68c828ce364913b6657e2dca984bbca3b0fa5d26d90b9a04def69dd510
+      - 365c4a614c2480ab48eb29ade4b96d3a7a80abda89bb03f5978788590cfb3b20
+      - ed2abf65cce027623265c772ecf2ce65d23c669729a276d37e506bd8e6f1f314
+      - 3a1badba634ada5ecdf0b45521aec8cccfd5eadf1ec2eced31e8ce131f507aa6
+    # files: IMG_20180121_130605.jpg, IMG_20180121_130606.jpg, IMG_20180318_092818.jpg, IMG_20180318_092837.jpg, IMG_20190228_183210.jpg
+    note: "written by the user. 'my' is a person-free relation; same photos as hi-dog"
+  - id: user-rajasthan-trip
+    query: "give me images of trip to rajasthan"
+    language: english
+    type: place
+    expected_image_ids:
+      - c7c6aba5bcc08ad38e7bc9e6d8aff023bf1905a4bc022478ffdf7a604c9881d3
+      - 361661d64645a85b67092a0798d24386f1846459e99bb9fdaabcafdb0b342998
+      - a54781e3b3b39718f0b1685d42b4dfed86bab3a168fb32b7c375e008c48766fd
+      - e7e81e9a464d406e55a7ea18bca50e71eb59b6a079dfb087161c98e5fabb34a1
+      - ca9d680506eb2525f8081fee15aec68c38c5f5dd9e6678047c6736ffc0ef898e
+      - 7bb259931d94b700bf8717e431095756d9a397e9e68052caba64c8cb58439a81
+      - 84fe9dc6e27ae7cf0ab28aef9639e6aeb31192a25b2e408648689f194f98415a
+      - e70d07144e1ecbb28f8578ef58738ad60a9e6ef18d8a685c7cc9222cbd878354
+      - 20a10aa30a1d346fc51982630be92238f537af179b79dfbf6f5810e18b57745a
+      - a3a0b47f30296a72411dabc55cfb64befcc3961481d928605ffd4e0fd827c17d
+      - 1e6de016a59629db10758e76326fbe0b13f3bcf24a05ee42b0043c3e6decc607
+      - 0168ca733327029034da918147853e8d904c03de60b43f1a797ac030b39b8c02
+      - 1bc95c1a0407e63dcdc22aa70870e202f778149351694ecfa855e90095a6e5eb
+      - ee98835250aca01f4d146b28468aecf223bc1020515925d829b97724787eea2c
+      - b324b13c19cfebf553e0186ab89fc486ec28b9f81cd2e9e373e44998c087e33d
+      - f433dababcbf48ffdb8713042b36ce6a06d6199ba95aeb86156523626d500482
+      - 16c9ee52362560ec2461e8080a2ee9c8893e2f2342a4a972e22d2a1a392aa536
+      - 686906ae2d96c03390e9424a89f4474e6fae2ff91413b04dae83189ad1e084f1
+      - c8e66256ee874453bf659c804631b33be04098a691f6569f8efdc725eb5b1927
+      - 4a27442bed565fd6c74f9804bfc4a3632b4d3d30c68c0e70008831da2213b7d4
+      - 673d1aab0eae8700ef73f3d8c6a94dd73156c004561d45d3cd41da405071748e
+      - 8147aa18180cd95c29eb7c166480a7d3a8c7a9f387c8fb104a8899d6e38001bb
+      - 347f9240ef216f36c0f55975a22fe6df5c12f59d11423f37653e4af20593fc67
+      - b30dd1bb7d4676792ad1267d943a6663cb2f2bb34dfdd7fc8bc4cdc62546dafe
+      - b2106f1cc02953047d56559d42e979b3e2d4e5d6e92956b90442d84b8265b3ab
+      - 71c51ca6ec91d520858a70d8dbe7381df5c8857ae4c9e5d8847b43de20406c1d
+      - 90343fc84338c45aa804ec0f96e292966410bb9a1344b8f7dc1121b6b5db480e
+      - 525effc50bd5b05f4ecf1ccbae738e78eb1548872fda7658f3c184257f5795be
+      - 2bb95bf3e4722bc6ac7590ecca3f03403ea6365e51dfdbce96787d0d2755d3a2
+      - 515bdfcbe8f58243788d55eaa370b6681999d886bcf152d6681a0b34152054d4
+      - 9ada2a4f9ee52261bbf97231813e4a8f17f97b71ed0a68d1c729abea53a7df67
+    # files: IMG_20161101_111218.jpg, IMG_20161101_120722.jpg, IMG_20161101_145912.jpg, IMG_20161101_150328.jpg, IMG_20161101_160420.jpg, IMG_20161101_160422.jpg, IMG_20161101_160442.jpg, IMG_20161101_160601.jpg, IMG_20161101_160605.jpg, IMG_20161101_163036.jpg, IMG_20161101_163121.jpg, IMG_20161101_205600.jpg, IMG_20161101_205603.jpg, IMG_20161102_104529.jpg, IMG_20161102_104614.jpg, IMG_20161102_104629.jpg, IMG_20161102_112321.jpg, IMG_20161102_112328.jpg, IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg, IMG_20161102_121143.jpg, IMG_20161102_121735.jpg, IMG_20161102_121947.jpg, IMG_20161102_135155.jpg, IMG_20161102_173454.jpg, IMG_20161102_183012.jpg, IMG_20161102_183021.jpg, IMG_20161102_192311.jpg, IMG_20161102_202751.jpg, IMG_20161103_073558.jpg
+    note: "written by the user. The Jaipur trip by date (1-3 Nov 2016), incl. the door close-up #25; no GPS, so only captions name the place"
+  - id: user-pigeons
+    query: "give me images of pigeons"
+    language: english
+    type: scene
+    expected_image_ids:
+      - ca9d680506eb2525f8081fee15aec68c38c5f5dd9e6678047c6736ffc0ef898e
+      - 7bb259931d94b700bf8717e431095756d9a397e9e68052caba64c8cb58439a81
+    # files: IMG_20161101_160420.jpg, IMG_20161101_160422.jpg
+    note: "written by the user"
