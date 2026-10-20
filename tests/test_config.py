@@ -35,6 +35,14 @@ def test_unknown_key_is_an_error(config_path: Path):
         load_config(config_path)
 
 
+@pytest.mark.parametrize("key", ["db_path", "search"])
+def test_missing_key_is_an_error(config_path: Path, key: str):
+    lines = config_path.read_text().splitlines()
+    config_path.write_text("\n".join(line for line in lines if not line.startswith(key)))
+    with pytest.raises(pydantic.ValidationError, match=key):
+        load_config(config_path)
+
+
 def test_default_config_ignores_current_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
     config = load_config()

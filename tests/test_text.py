@@ -42,3 +42,10 @@ def test_ocr_and_caption_rows_are_independent(conn: sqlite3.Connection, add_imag
     save_ocr(conn, "a", "")  # replacing OCR must not touch the caption row
 
     assert fts_rows(conn) == [("a", "caption", "a restaurant menu"), ("a", "ocr", "")]
+
+
+def test_empty_ocr_text_is_stored(conn: sqlite3.Connection, add_image):
+    add_image("a")
+    save_ocr(conn, "a", "")
+    assert conn.execute("SELECT text FROM ocr WHERE image_id = 'a'").fetchone()[0] == ""
+    assert fts_rows(conn) == [("a", "ocr", "")]
