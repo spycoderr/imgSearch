@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Local data: DB, derivatives, thumbnails, test images, eval runs
+data/
+*.db
+*.sqlite
+eval/runs/
+
+# Personal Claude Code settings
+.claude/settings.local.json

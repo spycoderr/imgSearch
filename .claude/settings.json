@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest *)",
+      "Bash(uv run imgsearch *)",
+      "Bash(uv run python *)",
+      "Bash(uv sync *)",
+      "Bash(uv add *)",
+      "Bash(uv tree *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git worktree *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(wc *)",
+      "Bash(ollama list *)",
+      "Bash(ollama ps *)",
+      "Bash(sqlite3 *)",
+      "Bash(uv run ruff *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/protect_originals.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ruff_format.py\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
