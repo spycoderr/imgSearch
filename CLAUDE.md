@@ -27,6 +27,9 @@ Never use `pip install`. Never run in Docker.
   search/ cli.py`). `config.yaml`, `tests/`, `eval/` and `docs/` sit at the project root.
 - **Originals are read-only.** No task writes, moves, renames or chmods anything under
   `originals_root`. A hook (`.claude/hooks/protect_originals.py`) blocks this; don't work around it.
+  The only exceptions are code paths, never ad-hoc commands: `imgsearch import` adds **new**
+  files (never overwrites or modifies one), and the P1.6 evictor removes a cached original only
+  after its S3 copy is verified. Tests use `tmp_path`, never the real folder.
 - Stages are idempotent and record `stage_status`. Re-running does nothing unless the stage
   `version` changes.
 - No absolute paths or model names in code. Everything comes from `config.yaml`.
