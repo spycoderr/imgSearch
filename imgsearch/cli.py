@@ -1,5 +1,6 @@
 """Command-line interface: `uv run imgsearch --help`."""
 
+import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Annotated
@@ -7,9 +8,11 @@ from typing import Annotated
 import typer
 
 from imgsearch.config import DEFAULT_CONFIG_PATH, Config, load_config
-from imgsearch.interfaces import Context, ParsedQuery
+from imgsearch.interfaces import Candidate, Context, ParsedQuery
 from imgsearch.search.text import TextRetriever, best_snippet
+from imgsearch.search.vector import VectorRetriever
 from imgsearch.sources.local import LocalFolderSource
+from imgsearch.stages.embed import EmbedStage
 from imgsearch.stages.ingest import IngestStage, register_new
 from imgsearch.stages.ocr import OcrStage
 from imgsearch.stages.runner import run_stage
@@ -87,6 +90,7 @@ def ingest(ctx: typer.Context) -> None:
 # Ingest is not listed: `imgsearch ingest` also registers new files first.
 STAGES = {
     "ocr": OcrStage,
+    "embed": EmbedStage,
 }
 
 
@@ -140,3 +144,35 @@ def search_text(
             typer.echo(f"    {best_snippet(conn, c.image_id, q)}")
     if not candidates:
         typer.echo("no matches")
+
+
+# ---- M2: vector search ----
+
+
+@app.command("search-vec")
+def search_vec(
+    ctx: typer.Context,
+    query: str,
+    k: Annotated[int | None, typer.Option(help="Results to show (default: search.top_k).")] = None,
+) -> None:
+    """Vector-only search: embed QUERY as English text and print the nearest images."""
+    from imgsearch.models.siglip import SiglipEmbedder  # loads torch; only this command needs it
+
+    config: Config = ctx.obj
+    embedder = SiglipEmbedder(config.models.embedder)
+    with closing(connect(config)) as conn:
+        retriever = VectorRetriever(conn, embedder, config.models.embedder)
+        candidates = retriever.retrieve(
+            ParsedQuery(english=query, original=query), k or config.search.top_k
+        )
+        for line in candidate_lines(conn, candidates):
+            typer.echo(line)
+
+
+def candidate_lines(conn: sqlite3.Connection, candidates: list[Candidate]) -> list[str]:
+    """One line per candidate: rank, score and the original's relative path."""
+    lines = []
+    for c in candidates:
+        row = conn.execute("SELECT orig_relpath FROM images WHERE id = ?", (c.image_id,)).fetchone()
+        lines.append(f"{c.rank:>3}  {c.score:.4f}  {row['orig_relpath']}")
+    return lines

@@ -19,6 +19,7 @@ class EmbedderConfig(_Strict):
     name: str
     dim: int
     device: str
+    text_max_length: int
 
 
 class CaptionerConfig(_Strict):

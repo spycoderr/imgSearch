@@ -9,6 +9,7 @@ models:
     name: google/siglip2-base-patch16-384
     dim: 768
     device: mps
+    text_max_length: 64   # model card: pad/truncate text to 64 tokens, as in training
   captioner:
     name: mlx-community/Qwen3-VL-4B-Instruct-4bit
   rewriter:
