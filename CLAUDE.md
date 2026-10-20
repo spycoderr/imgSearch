@@ -73,3 +73,16 @@ Never use `pip install`. Never run in Docker.
 3. Benchmark added to `docs/benchmarks.md` (model tasks).
 4. Nothing written outside the project except the HF and Ollama caches; nothing
    written under `originals_root`.
+5. Checked against `docs/acceptance/<task>.md`, if one exists.
+6. Report written to `docs/reports/<task>.md` (e.g. `M2.md`) and committed with the work.
+
+## Task reports (`docs/reports/`)
+
+- **Before starting:** read every existing report in `docs/reports/` and every supervisor
+  review in `docs/reviews/`. Earlier tasks record flags for later ones there (e.g. panoramas,
+  file paths, disk size). Open review items addressed to your task are part of your scope.
+- **When finishing:** write `docs/reports/<task>.md` with these sections: Summary, Real-run
+  results, Benchmark (model tasks), Changes from the plan, Flags (including "For <later
+  tasks>"), Acceptance checklist status, Files changed. State facts and numbers, not opinions.
+- Never edit another task's report. To correct or follow up on one, add a dated note under
+  "Follow-ups" in your own report.
