@@ -22,7 +22,7 @@ models:
     # tokens. An area cap (not a long edge) keeps panoramas tall enough to read.
     max_pixels: 1048576  # 1024 x 1024
   rewriter:
-    name: "qwen2.5:3b"
+    name: "qwen2.5:7b"
     url: "http://localhost:11434"
     timeout_s: 30  # a cold start loads the model first
     prompt: |
