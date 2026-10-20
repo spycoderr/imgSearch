@@ -23,7 +23,7 @@ named next to them.
 | M3 | `ocr` stage (Apple Vision) and full-text search | done |
 | M4 | `caption` stage (Qwen-VL via MLX) | done |
 | M5 | Hybrid search with RRF fusion, `imgsearch search` | not started |
-| M6 | Query rewriter for Hinglish/Hindi (Ollama) | not started |
+| M6 | Query rewriter for Hinglish/Hindi (Ollama) | done (wired into search in M5) |
 | M7 | Eval harness: recall@5 report and HTML contact sheet | not started |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
@@ -269,3 +269,28 @@ The text retriever already searches it.
 - It takes about 6 s per image and about 4 GB of MLX memory on the Mac mini M4 (see
   `docs/benchmarks.md`), so it runs last and alone. Captions sometimes end with filler such
   as "No readable text is present."; the M4 report gives the rate.
+
+## Query rewrite (M6)
+
+```sh
+uv run imgsearch rewrite "mummy ke saath Goa wali pizza ki photo"
+```
+
+`OllamaRewriter` (`imgsearch/models/rewriter.py`) turns an English, Hindi or Hinglish query
+into a `ParsedQuery`: `english`, `original`, `people`, `date_range` and `place`. `rewrite`
+prints it as JSON, followed by the time taken. M5 wires it into `search()`; until then it is
+only reachable from this command.
+
+- It needs Ollama 0.40.6 or later (`brew services start ollama`) and the model pulled:
+  `ollama pull qwen2.5:7b`.
+- Settings live in `config.yaml` under `models.rewriter`: `name` (the Ollama model), `url`,
+  `timeout_s` and `prompt` (the system prompt, with four few-shot examples).
+- It calls Ollama's `/api/chat` with `stream: false` and temperature 0, and passes the output
+  model's JSON schema as `format`, so the reply is constrained to that schema. The reply is
+  validated with pydantic. `original` is always the exact input, set by code.
+- Any failure (Ollama down, timeout, HTTP error, invalid JSON, schema mismatch, empty
+  `english`) logs a warning and returns the query unchanged as both `english` and `original`.
+- Ollama keeps the model loaded for its default 5 minutes after the last call (about 4.6 GB).
+  A cold call takes about 5–9 s, a warm one about 1.7 s (see `docs/benchmarks.md`).
+- `eval/rewrite_examples.yaml` holds 20 example queries (10 Hinglish, 5 Devanagari,
+  5 English) with hand-written expected rewrites; `docs/reports/M6.md` shows the outputs.

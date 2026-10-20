@@ -104,3 +104,28 @@ smoke and 10-image prompt trial runs (same model and settings, `mx.get_peak_memo
 
 Captioning is ~100× slower per image than embedding (0.06 s) and ~24× slower than OCR
 (0.24 s). Each image costs up to ~1k image tokens of prefill plus up to 100 generated tokens.
+
+## M6: query rewrite
+
+`qwen2.5:7b` (Q4_K_M) served by Ollama 0.40.6 (brew service), temperature 0, JSON-schema
+`format`, on the Mac mini M4 with no other model loaded. Run over the 20 queries in
+`eval/rewrite_examples.yaml` after `ollama stop`; the first call includes loading the model.
+Times are wall time around `OllamaRewriter.rewrite`, warm figures from a second pass over all
+20 queries. Memory is from `ollama ps` and the RSS of the `llama-server` runner process.
+
+| Measure | Value |
+| --- | --- |
+| First call (cold, includes model load) | 5.2–9.4 s (three cold starts: 5.2, 8.8, 9.4 s) |
+| Warm, median / max over 20 queries | 1.67 / 1.97 s |
+| Resident memory (`ollama ps`) | 4.6 GB, 100% GPU, context 4096 |
+| `llama-server` runner RSS | 4.7 GB |
+| Unloaded after | 5 min idle (Ollama default keep-alive) |
+
+Candidates measured the same way during the model comparison (Q8):
+
+| Model | Disk | Resident | Cold first call | Warm median / max |
+| --- | --- | --- | --- | --- |
+| `qwen2.5:3b` | 1.9 GB | 2.1 GB | 4.9 s | 0.74 / 1.34 s |
+| `qwen2.5:7b` (chosen) | 4.7 GB | 4.6 GB | 8.8 s | 1.70 / 1.96 s |
+| `gemma3:4b` | 3.4 GB | 2.2 GB | 6.6 s | 2.03 / 2.19 s |
+
