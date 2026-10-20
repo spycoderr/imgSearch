@@ -1,10 +1,13 @@
 import sqlite3
+import subprocess
+import sys
 from collections.abc import Collection
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
+from imgsearch.cli import STAGES
 from imgsearch.config import CaptionerConfig, Config, load_config
 from imgsearch.interfaces import Context
 from imgsearch.models.captioner import clean_caption, fit_to_area
@@ -165,3 +168,13 @@ def test_version_bump_recaptions(ctx: Context, config_path: Path):
 
 def test_unload_without_load_is_safe(config: Config):
     CaptionStage(config, Loader()).unload()
+
+
+def test_caption_is_runnable_from_cli():
+    assert STAGES["caption"] is CaptionStage
+
+
+def test_cli_import_does_not_load_mlx_vlm():
+    # CaptionStage is in the CLI's STAGES dict; `imgsearch status` must not pay for mlx-vlm.
+    code = "import sys, imgsearch.cli; assert 'mlx_vlm' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)

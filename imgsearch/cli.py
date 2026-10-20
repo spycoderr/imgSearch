@@ -12,6 +12,7 @@ from imgsearch.interfaces import Candidate, Context, ParsedQuery
 from imgsearch.search.text import TextRetriever, best_snippet
 from imgsearch.search.vector import VectorRetriever
 from imgsearch.sources.local import LocalFolderSource
+from imgsearch.stages.caption import CaptionStage
 from imgsearch.stages.embed import EmbedStage
 from imgsearch.stages.ingest import IngestStage, register_new
 from imgsearch.stages.ocr import OcrStage
@@ -91,6 +92,7 @@ def ingest(ctx: typer.Context) -> None:
 STAGES = {
     "ocr": OcrStage,
     "embed": EmbedStage,
+    "caption": CaptionStage,
 }
 
 

@@ -16,7 +16,7 @@ models:
       Describe what this photo shows in one or two short English sentences.
       If the photo contains readable text, add it after the description, copied exactly.
       Do not mention text if there is none.
-    max_tokens: 200
+    max_tokens: 100
     # Images are downscaled to at most this many pixels before captioning, keeping the
     # aspect ratio. The VLM uses ~1 token per 32x32 px, so this caps a prompt at ~1k image
     # tokens. An area cap (not a long edge) keeps panoramas tall enough to read.
