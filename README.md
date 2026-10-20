@@ -246,3 +246,18 @@ Bulk indexing of the full ~100GB archive, a WhatsApp bot (official Cloud API), o
 an external HDD with Syncthing phone sync, face search, near-duplicate and event clustering,
 and finally reranking and fine-tuning against the measured baseline. See the plan's
 "Extension roadmap" for the order and reasoning.
+
+## Captions (M4)
+
+The `caption` stage describes each derivative with a vision-language model on MLX
+(`MlxCaptioner` in `imgsearch/models/captioner.py`, via `mlx-vlm`) and stores the text with
+`store.text.save_caption`, so it lands in `captions` and in `text_fts` (kind `caption`).
+The text retriever already searches it.
+
+- Settings live in `config.yaml` under `models.captioner`: `name` (the MLX model), `prompt`,
+  `max_tokens`, and `max_pixels`. Each derivative is downscaled to at most `max_pixels` in
+  area (aspect kept) before captioning, which caps the image at about 1k prompt tokens.
+- Decoding is greedy (temperature 0). Only chat-template tokens and a leading "Caption:"
+  label are stripped from the output.
+- The stage requires `ingest`, loads the model once and frees MLX memory in `unload()`.
+- Bump `stages.caption` to re-caption everything (e.g. after changing the prompt or model).

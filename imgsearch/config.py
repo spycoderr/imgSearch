@@ -24,6 +24,9 @@ class EmbedderConfig(_Strict):
 
 class CaptionerConfig(_Strict):
     name: str
+    prompt: str
+    max_tokens: int
+    max_pixels: int  # images are downscaled to at most this area before captioning
 
 
 class RewriterConfig(_Strict):
