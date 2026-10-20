@@ -45,7 +45,20 @@ Not measured yet.
 
 ## M3: ocr
 
-Not measured yet.
+Apple Vision (`VNRecognizeTextRequest`, accurate level, `en-US`) through `ocrmac`, on the
+CPU/Neural Engine; no model download. All 130 derivatives (`stages.ocr: "1"`), measured with
+`/usr/bin/time -l .venv/bin/imgsearch run ocr` on the Mac mini M4, with no other model running.
+
+| Measure | Value |
+| --- | --- |
+| Total wall time for 130 images (incl. Python startup) | 31.8 s (30.6 s user CPU) |
+| Seconds per image | ~0.24 |
+| Peak memory (max RSS) | 371 MB |
+| Projected for 40k photos | ~2.7 h |
+| `search-text` query (whole command, incl. startup) | 0.22 s |
+
+Phase A timings for single images were 0.05 s (480×640) to 0.30 s (the 6203×507 panorama).
+ocrmac re-encodes each image as PNG before handing it to Vision, which is part of the CPU time.
 
 ## M4: caption
 

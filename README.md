@@ -20,7 +20,7 @@ named next to them.
 | M0 | Scaffold, `config.yaml`, SQLite schema, stage framework, `imgsearch status` | done |
 | M1 | Local folder source and `ingest` stage (hash, EXIF, derivative, thumbnail) | done |
 | M2 | `embed` stage (SigLIP 2) and vector retriever | not started |
-| M3 | `ocr` stage (Apple Vision) and full-text search | not started |
+| M3 | `ocr` stage (Apple Vision) and full-text search | done |
 | M4 | `caption` stage (Qwen-VL via MLX) | not started |
 | M5 | Hybrid search with RRF fusion, `imgsearch search` | not started |
 | M6 | Query rewriter for Hinglish/Hindi (Ollama) | not started |
@@ -144,6 +144,34 @@ next run. Bump `stages.ingest` in `config.yaml` to rebuild every derivative.
 Each run re-hashes every file under `originals_root`. That takes well under a second for
 the 100MB test set; for the full library on an HDD it means reading every byte each run, so
 the P2 bulk index should skip files whose path, size and mtime are unchanged.
+
+### OCR and text search (M3)
+
+```sh
+uv run imgsearch run ocr                  # OCR every ingested image that needs it
+uv run imgsearch search-text "dubai bazaar" [--k 5]
+```
+
+`imgsearch run <stage>` is the generic way to run one stage; `run ocr` is the only stage it
+knows so far (`STAGES` in `cli.py`; M2 and M4 add theirs). It prints
+`processed (done, failed)`, lists each failure with its error and exits with status 1 if any
+image failed. Running it again does nothing until `stages.ocr` changes in `config.yaml`.
+
+The `ocr` stage needs `ingest` to be done. It reads each image's derivative (never the
+original) with Apple Vision through `ocrmac`, using `models.ocr` in `config.yaml`
+(`recognition_level: accurate`, `languages: ["en-US"]`). The recognised lines are stored
+one per line in `ocr.text` and in `text_fts`. An image with no text stores `""` and is `done`.
+Known gap: ocrmac returns no lines, rather than raising, when the Vision request itself
+fails, so such an image is also stored as `""`.
+
+`search-text` searches all of `text_fts` (OCR text now, captions once M4 runs), ranked by
+bm25, one result per image. The query is used as given (no rewrite). It is split into words
+(letters, digits and combining marks, so Devanagari works); each word is quoted, so
+punctuation and FTS operators such as `AND`, `NEAR`, `-` or `*` are plain words. Common
+English stopwords and photo words (`photo`, `picture`, `image`, `pic`, ...) are dropped, and
+the rest are joined with `OR`. Matching is on whole words, with no stemming: `pizza` does not
+match `pizzas`. Each result line shows rank, score (`-bm25`, higher is better) and the
+original's path, then the matching text with the matched words in `[ ]`.
 
 ## Evaluation *(planned, M7)*
 
