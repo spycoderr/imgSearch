@@ -158,14 +158,20 @@ def search(
         bool, typer.Option("--no-rewrite", help="Search the query as given.")
     ] = False,
     signals: Annotated[
-        str, typer.Option(help="Comma-separated retrievers to use: vector, text or both.")
-    ] = ",".join(SIGNALS),
+        str | None,
+        typer.Option(
+            help="Comma-separated retrievers: vector, text, or vector,text for hybrid"
+            " (default: search.default_signals in config.yaml)."
+        ),
+    ] = None,
 ) -> None:
-    """Hybrid search: rewrite QUERY to English, run vector and full-text search, fuse with RRF."""
+    """Search: rewrite QUERY to English, run the chosen retrievers, fuse them with RRF."""
     config: Config = ctx.obj
-    names = [s.strip() for s in signals.split(",") if s.strip()]
-    if not names or any(s not in SIGNALS for s in names):
-        raise typer.BadParameter(f"choose from: {', '.join(SIGNALS)}", param_hint="--signals")
+    names = None
+    if signals is not None:
+        names = [s.strip() for s in signals.split(",") if s.strip()]
+        if not names or any(s not in SIGNALS for s in names):
+            raise typer.BadParameter(f"choose from: {', '.join(SIGNALS)}", param_hint="--signals")
     with closing(connect(config)) as conn:
         start = time.perf_counter()
         searcher = open_searcher(config, conn, signals=names, rewrite=not no_rewrite)

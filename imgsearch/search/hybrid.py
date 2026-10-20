@@ -112,11 +112,14 @@ def image_rows(conn: sqlite3.Connection, image_ids: list[str]) -> dict[str, sqli
 def open_searcher(
     config: Config,
     conn: sqlite3.Connection,
-    signals: Collection[str] = SIGNALS,
+    signals: Collection[str] | None = None,
     rewrite: bool = True,
 ) -> Searcher:
     """A `Searcher` with the real models, building only what `signals` and `rewrite` need
-    (so a text-only search loads no embedder and needs no Ollama)."""
+    (so a text-only search loads no embedder and needs no Ollama). `signals=None` means
+    `search.default_signals` from config, so every adapter gets the same default."""
+    if signals is None:
+        signals = config.search.default_signals
     unknown = [s for s in signals if s not in SIGNALS]
     if not signals or unknown:
         raise ValueError(f"signals must be some of {list(SIGNALS)}, got {list(signals)}")

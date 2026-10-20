@@ -59,6 +59,14 @@ class SearchConfig(_Strict):
     top_k: int
     per_retriever_k: int
     rrf_k: int
+    default_signals: list[Literal["vector", "text"]]  # used when a caller names none
+
+    @field_validator("default_signals")
+    @classmethod
+    def _some_signals_once(cls, value: list[str]) -> list[str]:
+        if not value or len(set(value)) != len(value):
+            raise ValueError("default_signals must name vector and/or text, each once")
+        return value
 
 
 class EvalPaths(_Strict):

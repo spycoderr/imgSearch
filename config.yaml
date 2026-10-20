@@ -72,8 +72,11 @@ stages:
 
 search:
   top_k: 5
-  per_retriever_k: 50
+  per_retriever_k: 10   # each retriever's list for RRF; 10 beat 20 and 50 in the M7 eval
   rrf_k: 60
+  # Retrievers `search` uses when none are given (`--signals`). vector alone with the
+  # rewrite beat vector+text on the M7 baseline (docs/mvp-summary.md, decision 1).
+  default_signals: [vector]
 
 eval:
   queries: eval/queries.yaml   # the labelled query set

@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -7,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from imgsearch.cli import app
-from imgsearch.config import Config
+from imgsearch.config import Config, load_config
 from imgsearch.interfaces import Candidate, ParsedQuery
 from imgsearch.models.rewriter import OllamaRewriter
 from imgsearch.search.hybrid import Searcher, open_searcher
@@ -15,6 +16,7 @@ from imgsearch.search.show import response_lines, short
 from imgsearch.search.text import TextRetriever
 from imgsearch.search.vector import VectorRetriever
 from imgsearch.stages.embed import save_embedding
+from imgsearch.store.db import connect
 from imgsearch.store.text import save_caption, save_ocr
 
 QUERY = "kutte ki photo"
@@ -245,3 +247,44 @@ def test_cli_rejects_unknown_signals(config_path: Path, images):
     result = run_cli(config_path, "dog", "--signals", "vector,faces")
     assert result.exit_code == 2
     assert "--signals" in result.output
+
+
+def set_default_signals(config_path: Path, signals: str) -> Config:
+    text = config_path.read_text(encoding="utf-8")
+    assert "  default_signals: [vector]\n" in text
+    config_path.write_text(
+        text.replace("  default_signals: [vector]\n", f"  default_signals: {signals}\n")
+    )
+    return load_config(config_path)
+
+
+def test_project_default_is_vector_with_k_10(config: Config):
+    assert config.search.default_signals == ["vector"]
+    assert config.search.per_retriever_k == 10
+
+
+@pytest.mark.parametrize("bad", ["[]", "[vector, vector]", "[faces]"])
+def test_default_signals_are_validated(config_path: Path, bad: str):
+    with pytest.raises(ValueError, match="default_signals"):
+        set_default_signals(config_path, bad)
+
+
+def test_open_searcher_uses_the_config_default(config_path: Path):
+    config = set_default_signals(config_path, "[text]")  # text: no model to load
+    with closing(connect(config)) as conn:
+        assert list(open_searcher(config, conn, rewrite=False).retrievers) == ["text"]
+
+
+def test_cli_uses_the_config_default(config_path: Path, images):
+    set_default_signals(config_path, "[text]")
+    result = run_cli(config_path, "welcome", "--no-rewrite")
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[1] == "signals: text"
+
+
+def test_cli_signals_override_the_default(config_path: Path, images):
+    # The project default is vector; --signals text must win (and so load no model).
+    result = run_cli(config_path, "welcome", "--no-rewrite", "--signals", "text")
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[1] == "signals: text"
+    assert "sign.jpg" in result.output

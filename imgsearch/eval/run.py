@@ -13,7 +13,7 @@ from imgsearch.config import PROJECT_ROOT, Config
 from imgsearch.eval.metrics import query_metrics, summarize
 from imgsearch.eval.queries import EvalQuery
 from imgsearch.interfaces import ParsedQuery, QueryRewriter
-from imgsearch.search.hybrid import Searcher, open_searcher
+from imgsearch.search.hybrid import SIGNALS, Searcher, open_searcher
 from imgsearch.search.text import TextRetriever
 
 OCR_ONLY = "text_ocr"  # retriever key for full-text search without captions
@@ -58,7 +58,7 @@ class CachedRewriter:
 def eval_searcher(config: Config, conn: sqlite3.Connection) -> tuple[Searcher, CachedRewriter]:
     """The real models, loaded once, plus an OCR-only text retriever for the no-captions run.
     Also returns the rewrite cache, which records each rewrite's time and result."""
-    base = open_searcher(config, conn)
+    base = open_searcher(config, conn, signals=SIGNALS)  # all of them, not the search default
     retrievers = {**base.retrievers, OCR_ONLY: TextRetriever(conn, kinds=("ocr",))}
     rewriter = CachedRewriter(base.rewriter)
     return Searcher(conn, config.search, rewriter, retrievers), rewriter
