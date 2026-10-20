@@ -6,24 +6,30 @@ from pathlib import Path
 
 import pillow_heif
 import pytest
-from PIL import ExifTags, Image
+from PIL import ExifTags, Image, ImageCms
 from typer.testing import CliRunner
 
 from imgsearch.cli import app
 from imgsearch.config import Config
 from imgsearch.interfaces import Context
 from imgsearch.sources.local import LocalFolderSource
-from imgsearch.stages.ingest import IngestStage, register_new
+from imgsearch.stages.ingest import DERIVATIVE_QUALITY, IngestStage, register_new
 from imgsearch.stages.runner import run_stage
 
 
 def make_jpeg(path: Path, size=(400, 200), color="red", **exif_fields) -> Path:
-    """Write a JPEG with optional EXIF: orientation, original, datetime, gps=(lat, lon)."""
+    """Write a JPEG with optional EXIF.
+
+    Fields: orientation, original (DateTimeOriginal), offset (OffsetTimeOriginal), datetime,
+    gps=(lat, lon) as well-formed tags, or gps_tags={tag: value} written as given.
+    """
     exif = Image.Exif()
     if "orientation" in exif_fields:
         exif[ExifTags.Base.Orientation] = exif_fields["orientation"]
     if "original" in exif_fields:
         exif.get_ifd(ExifTags.IFD.Exif)[ExifTags.Base.DateTimeOriginal] = exif_fields["original"]
+    if "offset" in exif_fields:
+        exif.get_ifd(ExifTags.IFD.Exif)[ExifTags.Base.OffsetTimeOriginal] = exif_fields["offset"]
     if "datetime" in exif_fields:
         exif[ExifTags.Base.DateTime] = exif_fields["datetime"]
     if "gps" in exif_fields:
@@ -33,6 +39,8 @@ def make_jpeg(path: Path, size=(400, 200), color="red", **exif_fields) -> Path:
         gps[ExifTags.GPS.GPSLatitude] = (float(int(abs(lat))), (abs(lat) % 1) * 60, 0.0)
         gps[ExifTags.GPS.GPSLongitudeRef] = "E" if lon >= 0 else "W"
         gps[ExifTags.GPS.GPSLongitude] = (float(int(abs(lon))), (abs(lon) % 1) * 60, 0.0)
+    if "gps_tags" in exif_fields:
+        exif.get_ifd(ExifTags.IFD.GPSInfo).update(exif_fields["gps_tags"])
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", size, color).save(path, "JPEG", exif=exif)
     return path
@@ -131,23 +139,80 @@ def test_rotated_image_is_stored_upright(config: Config, conn: sqlite3.Connectio
         assert d.getexif().get(ExifTags.Base.Orientation, 1) == 1
 
 
-def test_derivative_and_thumbnail_sizes_and_paths(config: Config, conn: sqlite3.Connection):
-    make_jpeg(config.originals_root / "big.jpg", size=(3000, 1500))
-    make_jpeg(config.originals_root / "small.jpg", size=(300, 100), color="blue")
+def test_derivative_and_thumbnail_paths(config: Config, conn: sqlite3.Connection):
+    make_jpeg(config.originals_root / "a.jpg", size=(4000, 3000))
     ingest(config, conn)
+    r = row(conn, "a.jpg")
+    assert r["derivative_path"] == f"derivatives/{r['id'][:2]}/{r['id']}.jpg"
+    assert r["thumb_path"] == f"thumbs/{r['id'][:2]}/{r['id']}.jpg"
+    with Image.open(config.derivatives_root / r["thumb_path"]) as t:
+        assert (t.format, t.size) == ("JPEG", (256, 192))
+    assert int(r["phash"], 16) >= 0 and len(r["phash"]) == 16
 
-    big = row(conn, "big.jpg")
-    assert big["derivative_path"] == f"derivatives/{big['id'][:2]}/{big['id']}.jpg"
-    assert big["thumb_path"] == f"thumbs/{big['id'][:2]}/{big['id']}.jpg"
-    with Image.open(config.derivatives_root / big["derivative_path"]) as d:
-        assert (d.format, d.size) == ("JPEG", (2048, 1024))
-    with Image.open(config.derivatives_root / big["thumb_path"]) as t:
-        assert (t.format, t.size) == ("JPEG", (256, 128))
 
-    small = row(conn, "small.jpg")
-    with Image.open(config.derivatives_root / small["derivative_path"]) as d:
-        assert d.size == (300, 100)  # never upscaled
-    assert int(small["phash"], 16) >= 0 and len(small["phash"]) == 16
+@pytest.mark.parametrize(
+    ("size", "expected"),
+    [
+        ((4000, 3000), (2048, 1536)),  # 12 MP photo: capped at 2048x1536
+        ((6656, 544), (6203, 507)),  # 3.6 MP panorama: just over the cap, height stays readable
+        ((1080, 2400), (1080, 2400)),  # 2.6 MP screenshot: under the cap, unchanged
+        ((300, 100), (300, 100)),  # never upscaled
+    ],
+    ids=["photo", "panorama", "screenshot", "small"],
+)
+def test_derivative_is_capped_by_area(config: Config, conn: sqlite3.Connection, size, expected):
+    make_jpeg(config.originals_root / "a.jpg", size=size)
+    ingest(config, conn)
+    r = row(conn, "a.jpg")
+    assert (r["width"], r["height"]) == size
+    with Image.open(config.derivatives_root / r["derivative_path"]) as d:
+        assert (d.format, d.size) == ("JPEG", expected)
+        assert d.size[0] * d.size[1] <= 2048 * 1536
+
+
+def test_derivative_quality_is_85(config: Config, conn: sqlite3.Connection, tmp_path: Path):
+    assert DERIVATIVE_QUALITY == 85
+    make_jpeg(config.originals_root / "a.jpg", size=(64, 64))
+    ingest(config, conn)
+    reference = tmp_path / "q85.jpg"
+    Image.new("RGB", (64, 64)).save(reference, "JPEG", quality=85)
+    derivative = config.derivatives_root / row(conn, "a.jpg")["derivative_path"]
+    with Image.open(derivative) as d, Image.open(reference) as ref:
+        assert d.quantization == ref.quantization
+
+
+@pytest.mark.parametrize("mode", ["RGBA", "LA", "P"])
+def test_transparent_png_gets_white_background(config: Config, conn: sqlite3.Connection, mode):
+    if mode == "P":
+        img = Image.new("P", (100, 50), 0)
+        img.putpalette([0, 0, 0] * 2)  # both entries black; entry 0 is transparent
+        img.info["transparency"] = 0
+        img.paste(1, (40, 15, 60, 35))  # opaque black "text"
+    else:
+        img = Image.new("RGBA", (100, 50), (0, 0, 0, 0))  # transparent black
+        img.paste((0, 0, 0, 255), (40, 15, 60, 35))  # opaque black "text"
+        img = img.convert(mode)
+    config.originals_root.mkdir(parents=True)
+    img.save(config.originals_root / "shot.png")
+    ingest(config, conn)
+    with Image.open(config.derivatives_root / row(conn, "shot.png")["derivative_path"]) as d:
+        assert min(d.getpixel((5, 5))) > 245  # background is white
+        assert max(d.getpixel((50, 25))) < 10  # text stays black
+
+
+def test_icc_profile_kept_only_for_rgb_sources(config: Config, conn: sqlite3.Connection):
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    config.originals_root.mkdir(parents=True)
+    Image.new("CMYK", (40, 20)).save(config.originals_root / "cmyk.jpg", icc_profile=profile)
+    Image.new("RGB", (40, 20)).save(config.originals_root / "rgb.jpg", icc_profile=profile)
+    _, counts = ingest(config, conn)
+    assert counts == {"done": 2, "failed": 0}
+    for name, expected in [("cmyk.jpg", None), ("rgb.jpg", profile)]:
+        r = row(conn, name)
+        for rel in (r["derivative_path"], r["thumb_path"]):
+            with Image.open(config.derivatives_root / rel) as d:
+                assert d.mode == "RGB"
+                assert d.info.get("icc_profile") == expected, name
 
 
 @pytest.mark.parametrize(
@@ -160,10 +225,19 @@ def test_derivative_and_thumbnail_sizes_and_paths(config: Config, conn: sqlite3.
             {"original": "2019:04:23 15:12:01", "datetime": "2018:01:02 03:04:05"},
             "2019-04-23T15:12:01",
         ),
+        ({"original": "2019:04:23 15:12:01", "offset": "+05:30"}, "2019-04-23T15:12:01"),
         ({"original": "0000:00:00 00:00:00"}, None),
         ({}, None),
     ],
-    ids=["original", "nul-padded", "datetime-fallback", "original-wins", "invalid", "missing"],
+    ids=[
+        "original",
+        "nul-padded",
+        "datetime-fallback",
+        "original-wins",
+        "offset-dropped",
+        "invalid",
+        "missing",
+    ],
 )
 def test_taken_at(config: Config, conn: sqlite3.Connection, exif_fields, expected):
     make_jpeg(config.originals_root / "a.jpg", **exif_fields)
@@ -183,6 +257,39 @@ def test_gps_signed_degrees(config: Config, conn: sqlite3.Connection):
         (-22.5, -43.25)
     )
     assert (row(conn, "none.jpg")["lat"], row(conn, "none.jpg")["lon"]) == (None, None)
+
+
+GOOD_LON = {ExifTags.GPS.GPSLongitudeRef: "E", ExifTags.GPS.GPSLongitude: (73.0, 45.0, 0.0)}
+
+
+@pytest.mark.parametrize(
+    "gps_tags",
+    [
+        {ExifTags.GPS.GPSLatitudeRef: "N", ExifTags.GPS.GPSLatitude: 15.5, **GOOD_LON},
+        {ExifTags.GPS.GPSLatitudeRef: "X", ExifTags.GPS.GPSLatitude: (15.0, 30.0, 0.0), **GOOD_LON},
+        {
+            ExifTags.GPS.GPSLatitudeRef: "N",
+            ExifTags.GPS.GPSLatitude: (0.0, 0.0, 0.0),
+            ExifTags.GPS.GPSLongitudeRef: "E",
+            ExifTags.GPS.GPSLongitude: (0.0, 0.0, 0.0),
+        },
+        {ExifTags.GPS.GPSLatitudeRef: "N", ExifTags.GPS.GPSLatitude: (95.0, 0.0, 0.0), **GOOD_LON},
+        {
+            ExifTags.GPS.GPSLatitudeRef: "N",
+            ExifTags.GPS.GPSLatitude: (15.0, 30.0, 0.0),
+            ExifTags.GPS.GPSLongitudeRef: "E",
+            ExifTags.GPS.GPSLongitude: (190.0, 0.0, 0.0),
+        },
+    ],
+    ids=["scalar", "bad-ref", "zero-zero", "lat-out-of-range", "lon-out-of-range"],
+)
+def test_bad_gps_gives_none_without_failing(config: Config, conn: sqlite3.Connection, gps_tags):
+    make_jpeg(config.originals_root / "a.jpg", original="2019:04:23 15:12:01", gps_tags=gps_tags)
+    _, counts = ingest(config, conn)
+    assert counts == {"done": 1, "failed": 0}
+    r = row(conn, "a.jpg")
+    assert (r["lat"], r["lon"]) == (None, None)
+    assert r["taken_at"] == "2019-04-23T15:12:01"  # the rest of the image is still ingested
 
 
 def test_heic_is_ingested(config: Config, conn: sqlite3.Connection):

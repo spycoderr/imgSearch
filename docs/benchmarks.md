@@ -17,8 +17,27 @@ vivo phone), fresh DB, measured with `/usr/bin/time -l .venv/bin/imgsearch inges
 | Thumbnails on disk (256px, JPEG q85) | 1.6 MB (~13 KB per image) |
 
 At this rate 40k photos take about 30 minutes of CPU, plus the time to read them from the
-HDD. At ~0.6 MB per image the derivatives take ~24 GB for 40k photos, more than the plan's
+HDD. At ~0.58 MB per image the derivatives take ~23 GB for 40k photos, more than the plan's
 10–15 GB estimate (D8); lowering the JPEG quality would shrink this.
+
+## M1.1: ingest version 2
+
+Same 130 photos, re-ingested at `stages.ingest: "2"`. Derivatives are now capped at 2048×1536
+pixels in area (not a 2048 px long edge) and saved at JPEG quality 85 (was 90). Measured
+with `/usr/bin/time -l .venv/bin/imgsearch ingest`.
+
+| Measure | M1 | M1.1 |
+| --- | --- | --- |
+| Total wall time for 130 images | 5.6 s | 5.8 s |
+| Seconds per image | ~0.043 | ~0.044 |
+| Peak memory (max RSS) | 186 MB | 186 MB |
+| Derivatives on disk | 74 MB | 69 MB |
+| Derivative size per image | ~0.58 MB | ~0.53 MB |
+| Projected derivatives for 40k photos | ~23 GB | ~21 GB |
+| Thumbnails on disk | 1.6 MB | 1.6 MB |
+
+The quality drop saves less than expected because 16:9 photos (47 of 130) are now
+2364×1330 (3.1 MP) instead of 2048×1152 (2.4 MP).
 
 ## M2: embed
 

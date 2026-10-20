@@ -4,12 +4,13 @@ Ingest runs in two steps:
 1. `register_new` hashes every file the source offers and inserts an `images` row for
    each new hash. The runner works on existing rows, so this step must come first.
 2. `IngestStage`, run through `run_stage`, opens each registered original read-only and
-   fills in size, EXIF date and GPS, pHash, the 2048px derivative and the 256px thumbnail.
+   fills in size, EXIF date and GPS, pHash, the derivative (at most 2048x1536 pixels in
+   area) and the 256px thumbnail.
 """
 
 import hashlib
 import math
-import re
+import numbers
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,9 +23,11 @@ from PIL import ExifTags, Image, ImageOps
 from imgsearch.config import Config
 from imgsearch.interfaces import Context, ImageRecord, ImageSource
 
-DERIVATIVE_EDGE = 2048  # long edge in pixels (plan D8)
+# Derivatives are capped by pixel area, not long edge, so panoramas and long screenshots
+# keep readable text (plan D8, changed in M1.1).
+DERIVATIVE_MAX_PIXELS = 2048 * 1536
 THUMB_EDGE = 256
-DERIVATIVE_QUALITY = 90
+DERIVATIVE_QUALITY = 85
 THUMB_QUALITY = 85
 
 
@@ -91,11 +94,12 @@ class IngestStage:
         original = config.originals_root / image.orig_relpath
         with original.open("rb") as f, Image.open(f) as src:
             exif = src.getexif()
-            icc_profile = src.info.get("icc_profile")
-            derivative = ImageOps.exif_transpose(src).convert("RGB")
+            # A profile for another colour space (e.g. CMYK) would be wrong on RGB output.
+            icc_profile = src.info.get("icc_profile") if src.mode == "RGB" else None
+            oriented = _to_rgb(ImageOps.exif_transpose(src))
 
-        width, height = derivative.size  # before resizing
-        derivative.thumbnail((DERIVATIVE_EDGE, DERIVATIVE_EDGE), Image.Resampling.LANCZOS)
+        width, height = oriented.size
+        derivative = _cap_area(oriented, DERIVATIVE_MAX_PIXELS)
         thumb = derivative.copy()
         thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.LANCZOS)
 
@@ -126,22 +130,40 @@ class IngestStage:
             )
 
 
+def _to_rgb(img: Image.Image) -> Image.Image:
+    """Convert to RGB, putting transparent images on white so dark text stays visible."""
+    if img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info:
+        rgba = img.convert("RGBA")
+        flat = Image.new("RGB", rgba.size, "white")
+        flat.paste(rgba, mask=rgba.getchannel("A"))
+        return flat
+    return img.convert("RGB")
+
+
+def _cap_area(img: Image.Image, max_pixels: int) -> Image.Image:
+    """Downscale to at most `max_pixels`, keeping the aspect ratio; never upscale."""
+    width, height = img.size
+    if width * height <= max_pixels:
+        return img
+    scale = math.sqrt(max_pixels / (width * height))
+    size = (max(1, math.floor(width * scale)), max(1, math.floor(height * scale)))
+    return img.resize(size, Image.Resampling.LANCZOS)
+
+
 def _save_jpeg(img: Image.Image, path: Path, quality: int, icc_profile: bytes | None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, "JPEG", quality=quality, icc_profile=icc_profile)
 
 
 def _taken_at(exif: Image.Exif) -> str | None:
-    """EXIF DateTimeOriginal, else DateTime, as ISO 8601; None if missing or invalid.
+    """EXIF DateTimeOriginal, else DateTime, as naive local time `YYYY-MM-DDTHH:MM:SS`.
 
-    The UTC offset is appended when the file records OffsetTimeOriginal.
+    Any UTC offset is ignored: users ask by local time ("Diwali evening"). None if missing
+    or invalid.
     """
     exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
     taken = _parse_exif_datetime(exif_ifd.get(ExifTags.Base.DateTimeOriginal))
     if taken is not None:
-        offset = exif_ifd.get(ExifTags.Base.OffsetTimeOriginal)
-        if isinstance(offset, str) and re.fullmatch(r"[+-]\d\d:\d\d", offset.strip("\x00 ")):
-            return taken + offset.strip("\x00 ")
         return taken
     return _parse_exif_datetime(exif.get(ExifTags.Base.DateTime))
 
@@ -156,29 +178,34 @@ def _parse_exif_datetime(value: object) -> str | None:
 
 
 def _gps(exif: Image.Exif) -> tuple[float | None, float | None]:
-    """EXIF GPS position as signed decimal degrees, or (None, None) if absent or invalid."""
+    """EXIF GPS position as signed decimal degrees.
+
+    (None, None) when absent or malformed, when exactly (0, 0) (phones write that without a
+    fix), or when out of range. Bad GPS never fails the image.
+    """
     gps = exif.get_ifd(ExifTags.IFD.GPSInfo)
-    keys = (
-        ExifTags.GPS.GPSLatitude,
-        ExifTags.GPS.GPSLatitudeRef,
-        ExifTags.GPS.GPSLongitude,
-        ExifTags.GPS.GPSLongitudeRef,
-    )
-    if not all(k in gps for k in keys):
+    lat = _degrees(gps.get(ExifTags.GPS.GPSLatitude), gps.get(ExifTags.GPS.GPSLatitudeRef), "NS")
+    lon = _degrees(gps.get(ExifTags.GPS.GPSLongitude), gps.get(ExifTags.GPS.GPSLongitudeRef), "EW")
+    if lat is None or lon is None or (lat == 0 and lon == 0):
         return None, None
-    lat = _degrees(gps[ExifTags.GPS.GPSLatitude], gps[ExifTags.GPS.GPSLatitudeRef], "S")
-    lon = _degrees(gps[ExifTags.GPS.GPSLongitude], gps[ExifTags.GPS.GPSLongitudeRef], "W")
-    if lat is None or lon is None:
+    if abs(lat) > 90 or abs(lon) > 180:
         return None, None
     return lat, lon
 
 
-def _degrees(dms: tuple, ref: str, negative_ref: str) -> float | None:
-    # Phones without a fix write 0/0 rationals, which become NaN.
-    if len(dms) != 3:
+def _degrees(dms: object, ref: object, refs: str) -> float | None:
+    """(degrees, minutes, seconds) + a ref from `refs` ("NS" or "EW"; the second is negative)."""
+    if not isinstance(dms, tuple) or len(dms) != 3:
+        return None
+    if not all(isinstance(x, numbers.Real) for x in dms):
+        return None
+    if not isinstance(ref, str):
+        return None
+    ref = ref.strip("\x00 ").upper()
+    if ref not in (refs[0], refs[1]):
         return None
     d, m, s = (float(x) for x in dms)
     value = d + m / 60 + s / 3600
-    if math.isnan(value):
+    if not math.isfinite(value):  # 0/0 rationals become NaN
         return None
-    return -value if ref.strip("\x00 ").upper() == negative_ref else value
+    return -value if ref == refs[1] else value

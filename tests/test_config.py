@@ -9,7 +9,8 @@ from imgsearch.config import DEFAULT_CONFIG_PATH, PROJECT_ROOT, load_config
 def test_project_config_loads():
     config = load_config(DEFAULT_CONFIG_PATH)
     assert config.models.embedder.dim == 768
-    assert config.stages == {"ingest": "1", "embed": "1", "ocr": "1", "caption": "1"}
+    # Names only: versions are bumped to re-run stages.
+    assert set(config.stages) == {"ingest", "embed", "ocr", "caption"}
     assert config.search.top_k == 5
 
 

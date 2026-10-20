@@ -37,8 +37,8 @@ M2, M3 and M4 can be built in parallel once M1 lands.
 
 - **One SQLite file** holds everything: image records, per-stage status, vectors
   (sqlite-vec) and OCR/caption text (FTS5).
-- **Originals are never modified.** Models work from a 2048px JPEG derivative and a 256px
-  thumbnail stored on the Mac, so search keeps working when the originals' drive is unplugged.
+- **Originals are never modified.** Models work from a JPEG derivative (at most 2048×1536
+  pixels in area) and a 256px thumbnail stored on the Mac, so search keeps working when the originals' drive is unplugged.
 - **An image's identity is the SHA-256 of its bytes.** Originals are stored as paths relative
   to `originals_root`, so the library can move to another drive by changing one config value.
 - **Stages are idempotent.** Re-running a stage does nothing unless its `version` changes,
@@ -76,7 +76,7 @@ contains none of them. Relative paths resolve against the folder holding `config
 
 ```yaml
 originals_root: data/originals      # read-only; later an external HDD mount
-derivatives_root: data/derivatives  # 2048px JPEGs and 256px thumbnails
+derivatives_root: data/derivatives  # derivative JPEGs and 256px thumbnails
 db_path: data/imgsearch.db
 models: {embedder: ..., captioner: ..., rewriter: ...}   # names, plus dim/device/url
 stages: {ingest: "1", embed: "1", ocr: "1", caption: "1"}  # bump a version to re-run that stage
@@ -119,14 +119,16 @@ It runs two steps:
    get no row; the first path seen is kept.
 2. **Ingest stage.** For each registered image not yet ingested, opens the original
    read-only, applies EXIF orientation, and fills in `width`/`height` (after orientation),
-   `taken_at` (EXIF DateTimeOriginal, else DateTime, ISO 8601), `lat`/`lon` (EXIF GPS) and
-   `phash`.
+   `taken_at` (EXIF DateTimeOriginal, else DateTime, as local time
+   `YYYY-MM-DDTHH:MM:SS`; any UTC offset is dropped), `lat`/`lon` (EXIF GPS; missing,
+   malformed, out-of-range or exactly (0, 0) GPS is stored as NULL) and `phash`. Transparent
+   images (PNG screenshots, logos) are put on a white background.
 
 What it creates, under `derivatives_root` (`data/derivatives` by default):
 
 | File | What |
 | --- | --- |
-| `derivatives/<id[:2]>/<id>.jpg` | JPEG, long edge 2048px (never upscaled). Models read this |
+| `derivatives/<id[:2]>/<id>.jpg` | JPEG (quality 85), downscaled only above 2048×1536 pixels in area, keeping the aspect ratio; never upscaled. Panoramas and long screenshots stay readable. Models read this |
 | `thumbs/<id[:2]>/<id>.jpg` | JPEG, long edge 256px |
 
 `<id>` is the image's SHA-256. The DB stores these paths relative to `derivatives_root`, so

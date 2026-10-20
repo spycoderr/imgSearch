@@ -1,7 +1,7 @@
 # imgsearch configuration. Relative paths resolve against the folder holding this file.
 
 originals_root: data/originals      # read-only; later an external HDD mount
-derivatives_root: data/derivatives  # 2048px JPEGs and 256px thumbnails
+derivatives_root: data/derivatives  # derivative JPEGs and 256px thumbnails
 db_path: data/imgsearch.db
 
 models:
@@ -17,7 +17,7 @@ models:
 
 # Stage versions. Bump one to re-run that stage on every image.
 stages:
-  ingest: "1"
+  ingest: "2"
   embed: "1"
   ocr: "1"
   caption: "1"
