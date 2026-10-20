@@ -74,6 +74,8 @@ Never use `pip install`. Never run in Docker.
 4. Nothing written outside the project except the HF and Ollama caches; nothing
    written under `originals_root`.
 5. Checked against `docs/acceptance/<task>.md`, if one exists.
+   Commit locally on `main`; never `git push`. The repo has a private GitHub remote, and the
+   supervisor pushes after reviewing each task.
 6. Report written to `docs/reports/<task>.md` (e.g. `M2.md`) and committed with the work;
    hand-back `docs/reports/<task>-handback.md` written and committed last.
 
