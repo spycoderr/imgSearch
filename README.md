@@ -95,8 +95,8 @@ uv run imgsearch search "goa wali pizza"      # hybrid search, top 5 (M5; rewrit
 
 `status` creates the database on first run. Only `status` exists so far; the others are
 *(planned)*. On a fresh DB it prints zeros for every configured stage; `not run` counts
-images with no row for that stage yet; `outdated` counts rows from a stage version other
-than the one in `config.yaml` (they re-run on the next run of that stage).
+images with no row for that stage yet; `outdated` counts `done` rows from a stage version
+other than the one in `config.yaml` (they re-run on the next run of that stage).
 
 Each task adds a section here explaining how to run its part.
 
