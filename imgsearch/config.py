@@ -1,6 +1,7 @@
 """Load config.yaml into typed settings."""
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -29,10 +30,16 @@ class RewriterConfig(_Strict):
     url: str
 
 
+class OcrConfig(_Strict):
+    recognition_level: Literal["accurate", "fast"]
+    languages: list[str]  # Vision language codes, e.g. "en-US"
+
+
 class ModelsConfig(_Strict):
     embedder: EmbedderConfig
     captioner: CaptionerConfig
     rewriter: RewriterConfig
+    ocr: OcrConfig
 
 
 class SearchConfig(_Strict):

@@ -14,6 +14,9 @@ models:
   rewriter:
     name: "qwen2.5:3b"
     url: "http://localhost:11434"
+  ocr:  # Apple Vision via ocrmac; text in photos is mostly English (plan D6)
+    recognition_level: accurate
+    languages: ["en-US"]
 
 # Stage versions. Bump one to re-run that stage on every image.
 stages:
