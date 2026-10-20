@@ -83,4 +83,24 @@ ocrmac re-encodes each image as PNG before handing it to Vision, which is part o
 
 ## M4: caption
 
-Not measured yet.
+`mlx-community/Qwen3-VL-4B-Instruct-4bit` through mlx-vlm 0.7.9 on the GPU (MLX), greedy,
+`max_tokens: 100`, images downscaled to at most 1024×1024 px in area. All 130 derivatives
+(`stages.caption: "1"`), measured with `/usr/bin/time -l .venv/bin/imgsearch run caption` on
+the Mac mini M4, with no other model running. Per-image times come from the gaps between
+consecutive `stage_status.updated_at` stamps (1 s resolution). Load and MLX peak come from the
+smoke and 10-image prompt trial runs (same model and settings, `mx.get_peak_memory()`).
+
+| Measure | Value |
+| --- | --- |
+| Total wall time for 130 images (`run caption`, incl. Python startup and model load) | 755.5 s |
+| Import mlx-vlm | ~3 s |
+| Model load (from the HF cache) | 2.2–2.5 s |
+| Seconds per image, mean / median / min / max | 5.8 / 6 / 3 / 7 |
+| Seconds per image in the 10-image trial (0.1 s resolution) | 5.0–6.7 |
+| MLX memory: model loaded / peak while captioning / after `unload()` | 3.10 GB / 3.96 GB / 0.00 GB |
+| Peak memory: max RSS / peak memory footprint (incl. Metal allocations) | 3.88 GB / 5.84 GB |
+| Caption length, median / max | 45.5 / 83 words |
+| Projected for 40k photos | ~64 h (~2.7 days) |
+
+Captioning is ~100× slower per image than embedding (0.06 s) and ~24× slower than OCR
+(0.24 s). Each image costs up to ~1k image tokens of prefill plus up to 100 generated tokens.

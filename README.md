@@ -21,7 +21,7 @@ named next to them.
 | M1 | Local folder source and `ingest` stage (hash, EXIF, derivative, thumbnail) | done |
 | M2 | `embed` stage (SigLIP 2) and vector retriever | done |
 | M3 | `ocr` stage (Apple Vision) and full-text search | done |
-| M4 | `caption` stage (Qwen-VL via MLX) | not started |
+| M4 | `caption` stage (Qwen-VL via MLX) | done |
 | M5 | Hybrid search with RRF fusion, `imgsearch search` | not started |
 | M6 | Query rewriter for Hinglish/Hindi (Ollama) | not started |
 | M7 | Eval harness: recall@5 report and HTML contact sheet | not started |
@@ -249,6 +249,11 @@ and finally reranking and fine-tuning against the measured baseline. See the pla
 
 ## Captions (M4)
 
+```sh
+uv run imgsearch run caption              # caption every ingested image that needs it
+uv run imgsearch search-text "kit kat"    # captions are searched together with OCR text
+```
+
 The `caption` stage describes each derivative with a vision-language model on MLX
 (`MlxCaptioner` in `imgsearch/models/captioner.py`, via `mlx-vlm`) and stores the text with
 `store.text.save_caption`, so it lands in `captions` and in `text_fts` (kind `caption`).
@@ -261,3 +266,6 @@ The text retriever already searches it.
   label are stripped from the output.
 - The stage requires `ingest`, loads the model once and frees MLX memory in `unload()`.
 - Bump `stages.caption` to re-caption everything (e.g. after changing the prompt or model).
+- It takes about 6 s per image and about 4 GB of MLX memory on the Mac mini M4 (see
+  `docs/benchmarks.md`), so it runs last and alone. Captions sometimes end with filler such
+  as "No readable text is present."; the M4 report gives the rate.
