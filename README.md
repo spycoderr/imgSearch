@@ -24,7 +24,7 @@ named next to them.
 | M4 | `caption` stage (Qwen-VL via MLX) | done |
 | M5 | Hybrid search with RRF fusion, `imgsearch search` | done |
 | M6 | Query rewriter for Hinglish/Hindi (Ollama) | done (wired into search by M5) |
-| M7 | Eval harness: recall@5 report and HTML contact sheet | not started |
+| M7 | Eval harness: recall@5 report and HTML contact sheet | done (baseline in `docs/eval/baseline.md`) |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -193,13 +193,48 @@ distance (sqlite-vec `vec_distance_cosine`). Its score is cosine similarity (hig
 raw similarities are small (about 0.0–0.2 for a good match); only the order matters. The
 command takes about 5 s, mostly loading torch and the model.
 
-## Evaluation *(planned, M7)*
+## Evaluation (M7)
 
-`eval/queries.yaml` holds 30–40 labelled queries (`{query, language, expected_image_ids}`)
-over a hand-picked set of 100 images. The eval reports recall@5 overall, by language and
-by query type, plus ablations (vector only, text only, hybrid, with and without the rewrite).
-It also writes an HTML contact sheet per run. Per-stage speed and memory benchmarks
-are kept in `docs/benchmarks.md`.
+```sh
+uv run imgsearch eval-review                    # check eval/queries.yaml, write a review sheet
+uv run imgsearch eval                           # run every configuration, write a run folder
+uv run imgsearch eval-compare eval/runs/A eval/runs/B   # two runs' metrics side by side
+```
+
+- **The query set** is `eval/queries.yaml`: 41 queries confirmed by the user, written from
+  looking at the photos. Each query is `{id, query, language, type, expected_image_ids,
+  note}`. `language` is english, hinglish or hindi. `type` is scene, object, text, place
+  or hard. Expected photos are image ids (SHA-256); a `# files:` comment lists the file
+  names for people.
+  - The loader rejects unknown ids, languages, types or fields, empty lists, and duplicate
+    query ids.
+  - `eval-review` writes `eval/runs/query_review.html`: each query with its expected
+    thumbnails.
+- **`imgsearch eval`** loads the models once and runs 7 configurations: vector, text and
+  hybrid, each with and without the rewrite, plus hybrid with the rewrite but without
+  captions (text search over OCR only).
+  - Each query is rewritten once per run, and every rewrite-on configuration uses that
+    rewrite.
+  - It takes about 90 s for 41 queries.
+- **Metrics,** per query, averaged overall, by language and by type:
+  - hit@5: any expected photo in the top 5.
+  - recall@5: expected photos found ÷ min(5, number expected).
+  - MRR: 1 / rank of the first expected photo within the top 5.
+- **Each run writes `eval/runs/<YYYYmmdd-HHMMSS>/`:** `results.json` (every query ×
+  configuration, with the top 5 and per-signal ranks), `metrics.json`, `meta.json` (git
+  commit and dirty flag, query-file hash, models, Ollama version, timings), a copy of
+  `config.yaml`, and `contact_sheet.html`.
+  - The contact sheet is one offline HTML file. It starts with the summary tables, then
+    shows each query with its rewrite, the hybrid+rw top 5 (hits outlined in green, with
+    fused score and per-signal ranks), and the expected photos (misses in red). The other
+    configurations are folded underneath.
+- **Privacy:** `eval/runs/` holds personal photos and is git-ignored. Never commit or share
+  its contents. The committed numbers are in `docs/eval/baseline.md`.
+- **Results:** the MVP baseline is in `docs/eval/baseline.md`, and what it means is in
+  `docs/mvp-summary.md`. On this set vector+rw is best (recall@5 0.98, against 0.87 for
+  hybrid+rw).
+- Re-run `imgsearch eval` after any model, prompt, config or Ollama change. Compare with
+  `eval-compare`. Don't run it during a caption run (memory, see "Search (M5)").
 
 ## Development
 

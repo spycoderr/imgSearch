@@ -151,3 +151,17 @@ from `/usr/bin/time -l .venv/bin/imgsearch search ...` (peak memory footprint) a
 | Search process peak memory footprint | 2.20–2.23 GB |
 | Ollama resident while loaded | 4.6 GB |
 | Total while searching | ~6.8 GB (don't run alongside the 4–6 GB caption stage) |
+
+## M7: eval
+
+`imgsearch eval` on the 41 confirmed queries, 7 configurations, one process. Mac mini M4,
+with no other model running. Ollama was emptied with `ollama stop` first.
+
+| Measure | Value |
+| --- | --- |
+| Model load (SigLIP + rewriter client) | 7.0 s |
+| Whole run (41 queries × 7 configurations, incl. load and contact sheet) | 89–90 s |
+| Rewrite, median (each query once, cached for the other configurations) | 1.65 s |
+| Eval process peak memory footprint (`/usr/bin/time -l`) | 2.24 GB |
+| Ollama resident | 4.6 GB |
+| Contact sheet size (130 thumbnails embedded once) | 2.2 MB |
