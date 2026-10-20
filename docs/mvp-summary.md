@@ -176,3 +176,26 @@ Open decisions for the user:
 - `per_retriever_k`, if hybrid stays.
 - Captions in P2.
 - More text-heavy eval queries.
+
+## Decisions after the MVP
+
+2026-10-20 · Decided by the user after the M7 review (`docs/reviews/M7.md`), applied in M7.1.
+`docs/eval/baseline.md` stays unchanged as the record.
+
+1. **Default search is vector + rewrite. Hybrid stays an option.**
+   - New config key `search.default_signals: [vector]`, so every adapter (the CLI now,
+     WhatsApp later) gets the same default from one place.
+   - `imgsearch search "..."` uses it when no `--signals` is given.
+     `--signals vector,text` still runs hybrid, and `--signals text` runs text only.
+   - The eval's configurations are unchanged: they name their signals explicitly.
+2. **`search.per_retriever_k` is 10** (was 50), for the hybrid mode. Vector-only results don't
+   depend on it.
+   - Re-run after the change (`eval/runs/20261020-230042`, commit `365d411`):
+     - vector+rw: 1.00 / 0.98 / 0.99, same as the baseline.
+     - hybrid+rw: 1.00 / 0.93 / 0.91, same as the k = 10 experiment. Every metric in every
+       group matches.
+   - Re-measure on the P2 library: 10 of 130 photos is a different cut from 10 of 40,000.
+3. **Captions: keep the stage.** In P2, run it last and in the background, after ingest,
+   embed and OCR. Search works without captions, and the default (vector + rewrite) doesn't
+   use them. Captions still feed the hybrid mode's text search, which is where place names
+   like "Amber Fort in Jaipur" come from (see `docs/reports/M7.1.md`).

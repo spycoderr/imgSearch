@@ -332,17 +332,28 @@ prints it as JSON, followed by the time taken. `imgsearch search` calls it first
 ## Search (M5)
 
 ```sh
-uv run imgsearch search "mummy ke saath Goa wali pizza ki photo"
+uv run imgsearch search "mummy ke saath Goa wali pizza ki photo"   # default: vector + rewrite
+uv run imgsearch search "Jaipur ka kila" --signals vector,text      # hybrid
 uv run imgsearch search "dubai bazaar" --k 10
 uv run imgsearch search "a white dog" --no-rewrite            # skip the rewrite LLM
-uv run imgsearch search "dubai bazaar" --signals text          # one retriever only
+uv run imgsearch search "dubai bazaar" --signals text          # full-text only
 ```
 
-The query is rewritten to English (M6), then the vector retriever searches with `english`
-and the full-text retriever with `english` and the original text. Each returns up to
-`search.per_retriever_k` (50) images. The two rankings are merged with Reciprocal Rank
-Fusion: score = Σ 1 / (`search.rrf_k` + rank), with `rrf_k` = 60. Ties go to the better
-single rank, then the image id. The top `--k` (default `search.top_k`, 5) are printed:
+The query is rewritten to English (M6). Then each chosen retriever searches:
+- The vector retriever searches with `english`.
+- The full-text retriever searches with `english` and the original text.
+
+**By default only the vector retriever runs.** That is `search.default_signals: [vector]`
+in `config.yaml`, used by every caller that names no signals. It was chosen because vector +
+rewrite beat hybrid on the M7 eval (recall@5 0.98 against 0.87–0.93; see
+`docs/mvp-summary.md`). `--signals vector,text` runs hybrid. That still helps when a caption
+or OCR text names something the image alone doesn't show, e.g. "Jaipur ka kila" ranks the
+Amber Fort panorama 1st in hybrid and 6th with vector alone.
+
+Each retriever returns up to `search.per_retriever_k` (10) images. The rankings are merged
+with Reciprocal Rank Fusion: score = Σ 1 / (`search.rrf_k` + rank), with `rrf_k` = 60. With
+one retriever, that keeps its order. Ties go to the better single rank, then the image id.
+The top `--k` (default `search.top_k`, 5) are printed. An example in hybrid mode:
 
 ```
 searched: white dog sitting on the carpet  (rewritten from: safed kutta carpet pe baitha hua)
@@ -359,13 +370,14 @@ Each result shows the rank, the fused score, the original's path (relative to
 ~100 characters of the caption. If Ollama is down or the reply is invalid, the query is
 searched as given, and the first line says `rewrite skipped: <reason>`.
 
-- `--no-rewrite` searches the query as given. `--signals vector` or `--signals text` uses
-  one retriever. `--signals text --no-rewrite` loads no model and needs no Ollama
+- `--no-rewrite` searches the query as given. `--signals text` uses full-text search only;
+  `--signals vector,text` uses both. `--signals text --no-rewrite` loads no model and needs no Ollama
   (about 0.4 s).
 - A full search loads SigLIP (about 6 s per command), then takes about 1.7 s warm, almost
   all of it the rewrite. The first query after 5 idle minutes waits 5–9 s for Ollama to
   load the model.
-- In code, build once and reuse: `searcher = open_searcher(config, conn)`, then
+- In code, build once and reuse: `searcher = open_searcher(config, conn)` (the config's
+  default signals, or pass `signals=[...]`), then
   `searcher.search(query, k=None, rewrite=True, signals=None)` returns a `SearchResponse`.
   That holds the `ParsedQuery` searched, the `Result`s and the timings
   (`imgsearch/search/hybrid.py`).
