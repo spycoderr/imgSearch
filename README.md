@@ -10,14 +10,15 @@ That doc is the source of truth. This README covers how to set up and run the pr
 
 ## Status
 
-**M0 done.** The package skeleton, config, database schema, stage runner and
-`imgsearch status` work. Nothing is indexed yet. Commands marked *(planned)* arrive with the
-task named next to them.
+**M1 done.** The package skeleton, config, database schema, stage runner,
+`imgsearch status` and `imgsearch ingest` work. Photos can be ingested (hash, EXIF,
+derivative, thumbnail) but not yet searched. Commands marked *(planned)* arrive with the task
+named next to them.
 
 | Task | What it adds | Status |
 | --- | --- | --- |
 | M0 | Scaffold, `config.yaml`, SQLite schema, stage framework, `imgsearch status` | done |
-| M1 | Local folder source and `ingest` stage (hash, EXIF, derivative, thumbnail) | not started |
+| M1 | Local folder source and `ingest` stage (hash, EXIF, derivative, thumbnail) | done |
 | M2 | `embed` stage (SigLIP 2) and vector retriever | not started |
 | M3 | `ocr` stage (Apple Vision) and full-text search | not started |
 | M4 | `caption` stage (Qwen-VL via MLX) | not started |
@@ -89,16 +90,58 @@ Unknown keys are an error. Use another config file with `uv run imgsearch --conf
 
 ```sh
 uv run imgsearch status                       # image count, per-stage counts by state (M0)
+uv run imgsearch ingest                       # register new photos, write derivatives (M1)
 uv run imgsearch search-vec "a plate of food" # vector-only search (M2)
 uv run imgsearch search "goa wali pizza"      # hybrid search, top 5 (M5; rewrite from M6)
 ```
 
-`status` creates the database on first run. Only `status` exists so far; the others are
-*(planned)*. On a fresh DB it prints zeros for every configured stage; `not run` counts
+`status` creates the database on first run. `status` and `ingest` exist so far; the others
+are *(planned)*. On a fresh DB it prints zeros for every configured stage; `not run` counts
 images with no row for that stage yet; `outdated` counts `done` rows from a stage version
 other than the one in `config.yaml` (they re-run on the next run of that stage).
 
 Each task adds a section here explaining how to run its part.
+
+### Ingest
+
+Put photos (`.jpg .jpeg .png .heic .heif`, any case, in any subfolder layout) under
+`originals_root` (`data/originals` by default), then run:
+
+```sh
+uv run imgsearch ingest
+```
+
+It runs two steps:
+
+1. **Register.** Scans `originals_root` recursively (hidden files such as `.DS_Store` and
+   `._*` are skipped), hashes every file with SHA-256 and adds an `images` row for each new
+   hash. Files with the same bytes as an already registered image count as duplicates and
+   get no row; the first path seen is kept.
+2. **Ingest stage.** For each registered image not yet ingested, opens the original
+   read-only, applies EXIF orientation, and fills in `width`/`height` (after orientation),
+   `taken_at` (EXIF DateTimeOriginal, else DateTime, ISO 8601), `lat`/`lon` (EXIF GPS) and
+   `phash`.
+
+What it creates, under `derivatives_root` (`data/derivatives` by default):
+
+| File | What |
+| --- | --- |
+| `derivatives/<id[:2]>/<id>.jpg` | JPEG, long edge 2048px (never upscaled). Models read this |
+| `thumbs/<id[:2]>/<id>.jpg` | JPEG, long edge 256px |
+
+`<id>` is the image's SHA-256. The DB stores these paths relative to `derivatives_root`, so
+the full path is `config.derivatives_root / image.derivative_path`. Originals are never
+written.
+
+It prints counts for both steps: `new`, `already registered`, `duplicates` and `unreadable`
+files, then `processed (done, failed)`. Running it again prints `0 new` and `0 processed`.
+A file that can't be read, or an image that fails to decode, is listed with its error and
+the command exits with status 1; the others still finish. Failed images are retried on the
+next run. Bump `stages.ingest` in `config.yaml` to rebuild every derivative.
+
+Each run re-hashes every file under `originals_root`. That takes well under a second for
+the 100MB test set; for the full library on an HDD it means reading every byte each run, so
+the P2 bulk index should skip files whose path, size and mtime are unchanged.
 
 ## Evaluation *(planned, M7)*
 
@@ -126,6 +169,8 @@ uv run ruff format . && uv run ruff check --fix .
   | `imgsearch/store/text.py` | `save_ocr()` / `save_caption()`: the only writers of OCR text, captions and `text_fts` |
   | `imgsearch/store/status.py` | `set_status()`, `status_counts()` for `stage_status` |
   | `imgsearch/stages/runner.py` | `run_stage(stage, ctx)`: runs one stage over every pending image |
+  | `imgsearch/sources/local.py` | `LocalFolderSource`: yields image files under a folder, opens them read-only |
+  | `imgsearch/stages/ingest.py` | `register_new()` (hash, add `images` rows) and `IngestStage` (EXIF, pHash, derivative, thumbnail) |
 
 - **Writing a stage.** Implement the `Stage` protocol: `name`, `version` (read it from
   `config.stages`), `requires`, `load(ctx)`, `run(image, ctx)` and `unload()`. Run it with
