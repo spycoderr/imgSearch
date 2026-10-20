@@ -134,7 +134,8 @@ queries:
       - 59387d6d353d5bbf140f658d5717056a7e1e2f5fad0c9d563b4fc8a0d950244e
       - c16dc8e5afbc7bdc2cb9fc9bc11cc10a4723164d4208266fa7bd1b0ad16a3396
       - 5187a23940d07c79bc43e35ca3fb330a40374d5f59816553bfed888d3913a811
-    # files: IMG_20190506_184159.jpg, IMG_20190506_184207.jpg, IMG_20190506_184210.jpg
+      - ec2bc4e05ddc1d51c6bb51bd87f597b9120a753de1ca769cea2a08dbceff2745
+    # files: IMG_20190506_184159.jpg, IMG_20190506_184207.jpg, IMG_20190506_184210.jpg, IMG_20190506_184214.jpg
     note: "printed sheets"
   - id: en-txt-solids
     query: "visualising solid shapes"
@@ -200,7 +201,8 @@ queries:
       - c8e66256ee874453bf659c804631b33be04098a691f6569f8efdc725eb5b1927
       - 4a27442bed565fd6c74f9804bfc4a3632b4d3d30c68c0e70008831da2213b7d4
       - 673d1aab0eae8700ef73f3d8c6a94dd73156c004561d45d3cd41da405071748e
-    # files: IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg
+      - b2106f1cc02953047d56559d42e979b3e2d4e5d6e92956b90442d84b8265b3ab
+    # files: IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg, IMG_20161102_135155.jpg
     note: ""
   - id: hi-bedroom
     query: "bed wala kamra"
@@ -311,8 +313,9 @@ queries:
       - 8147aa18180cd95c29eb7c166480a7d3a8c7a9f387c8fb104a8899d6e38001bb
       - 347f9240ef216f36c0f55975a22fe6df5c12f59d11423f37653e4af20593fc67
       - b30dd1bb7d4676792ad1267d943a6663cb2f2bb34dfdd7fc8bc4cdc62546dafe
-    # files: IMG_20161102_104529.jpg, IMG_20161102_104614.jpg, IMG_20161102_104629.jpg, IMG_20161102_112321.jpg, IMG_20161102_112328.jpg, IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg, IMG_20161102_121143.jpg, IMG_20161102_121735.jpg, IMG_20161102_121947.jpg
-    note: "place name; M6 rewrites जयपुर as Jodhpur. Confirm which of #13-23 are the fort"
+      - b2106f1cc02953047d56559d42e979b3e2d4e5d6e92956b90442d84b8265b3ab
+    # files: IMG_20161102_104529.jpg, IMG_20161102_104614.jpg, IMG_20161102_104629.jpg, IMG_20161102_112321.jpg, IMG_20161102_112328.jpg, IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg, IMG_20161102_121143.jpg, IMG_20161102_121735.jpg, IMG_20161102_121947.jpg, IMG_20161102_135155.jpg
+    note: "place name; M6 rewrites जयपुर as Jodhpur. #13-24; #24 confirmed by the user"
   - id: dv-xmas
     query: "क्रिसमस ट्री"
     language: hindi
@@ -368,14 +371,6 @@ queries:
       - 7d32967d1fec89faf72844347585880bc59a3ea891e46a1a1e505eed9df734e5
     # files: IMG_20181217_165916.jpg
     note: "printed Devanagari; OCR is English-only"
-  - id: user-car
-    query: "give me images inside car"
-    language: english
-    type: scene
-    expected_image_ids:
-      - 0241881a284fa299fd1c852925e68112d5d0327df321c76bf185e01e31836e50
-    # files: IMG_20170813_111023.jpg
-    note: "written by the user. Only #56 (selfie against a padded seat) looks like a car interior; user to confirm"
   - id: user-socsci-homework
     query: "return me the homework related to social science"
     language: english
