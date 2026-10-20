@@ -1,0 +1,28 @@
+# imgsearch configuration. Relative paths resolve against the folder holding this file.
+
+originals_root: data/originals      # read-only; later an external HDD mount
+derivatives_root: data/derivatives  # 2048px JPEGs and 256px thumbnails
+db_path: data/imgsearch.db
+
+models:
+  embedder:
+    name: google/siglip2-base-patch16-384
+    dim: 768
+    device: mps
+  captioner:
+    name: mlx-community/Qwen3-VL-4B-Instruct-4bit
+  rewriter:
+    name: "qwen2.5:3b"
+    url: "http://localhost:11434"
+
+# Stage versions. Bump one to re-run that stage on every image.
+stages:
+  ingest: "1"
+  embed: "1"
+  ocr: "1"
+  caption: "1"
+
+search:
+  top_k: 5
+  per_retriever_k: 50
+  rrf_k: 60

@@ -10,12 +10,13 @@ That doc is the source of truth. This README covers how to set up and run the pr
 
 ## Status
 
-**Pre-M0.** The tooling is set up (uv env, Claude Code hooks, ruff) but there is no
-application code yet. Commands marked *(planned)* arrive with the task named next to them.
+**M0 done.** The package skeleton, config, database schema, stage runner and
+`imgsearch status` work. Nothing is indexed yet. Commands marked *(planned)* arrive with the
+task named next to them.
 
 | Task | What it adds | Status |
 | --- | --- | --- |
-| M0 | Scaffold, `config.yaml`, SQLite schema, stage framework, `imgsearch status` | not started |
+| M0 | Scaffold, `config.yaml`, SQLite schema, stage framework, `imgsearch status` | done |
 | M1 | Local folder source and `ingest` stage (hash, EXIF, derivative, thumbnail) | not started |
 | M2 | `embed` stage (SigLIP 2) and vector retriever | not started |
 | M3 | `ocr` stage (Apple Vision) and full-text search | not started |
@@ -67,26 +68,34 @@ ollama pull qwen2.5:3b
 
 Add dependencies with `uv add <pkg>` (or `uv add --dev <pkg>`), never `pip install`.
 
-## Configuration *(planned, M0)*
+## Configuration
 
-All paths, model names and stage versions live in `config.yaml`. Code contains none of them.
+All paths, model names and stage versions live in `config.yaml` at the project root. Code
+contains none of them. Relative paths resolve against the folder holding `config.yaml`.
 
 ```yaml
 originals_root: data/originals      # read-only; later an external HDD mount
 derivatives_root: data/derivatives  # 2048px JPEGs and 256px thumbnails
 db_path: data/imgsearch.db
-# model names and per-stage versions: see config.yaml once M0 lands
+models: {embedder: ..., captioner: ..., rewriter: ...}   # names, plus dim/device/url
+stages: {ingest: "1", embed: "1", ocr: "1", caption: "1"}  # bump a version to re-run that stage
+search: {top_k: 5, per_retriever_k: 50, rrf_k: 60}
 ```
 
+Unknown keys are an error. Use another config file with `uv run imgsearch --config path/to/config.yaml ...`.
 `data/` is git-ignored.
 
-## Usage *(planned)*
+## Usage
 
 ```sh
-uv run imgsearch status                       # counts per stage and state (M0)
+uv run imgsearch status                       # image count, per-stage counts by state (M0)
 uv run imgsearch search-vec "a plate of food" # vector-only search (M2)
 uv run imgsearch search "goa wali pizza"      # hybrid search, top 5 (M5; rewrite from M6)
 ```
+
+`status` creates the database on first run. Only `status` exists so far; the others are
+*(planned)*. On a fresh DB it prints zeros for every configured stage; `not run` counts
+images with no row for that stage yet.
 
 Each task adds a section here explaining how to run its part.
 
@@ -105,7 +114,25 @@ uv run pytest                                    # tests
 uv run ruff format . && uv run ruff check --fix .
 ```
 
-- Code goes under `imgsearch/` (`sources/ stages/ models/ store/ search/ cli.py`, `eval/`, `tests/`).
+- Package code goes under `imgsearch/`; `config.yaml`, `tests/`, `eval/` and `docs/` sit at the root.
+
+  | Module | What it holds |
+  | --- | --- |
+  | `imgsearch/config.py` | `load_config()` and the pydantic `Config` model |
+  | `imgsearch/interfaces.py` | All protocols (`Stage`, `Embedder`, ...) and shared dataclasses |
+  | `imgsearch/store/db.py` | `connect(config)`: opens the DB, loads sqlite-vec, applies migrations |
+  | `imgsearch/store/migrations/` | Numbered `.sql` files, tracked with `PRAGMA user_version`. Add a new file; never edit an applied one |
+  | `imgsearch/store/text.py` | `save_ocr()` / `save_caption()`: the only writers of OCR text, captions and `text_fts` |
+  | `imgsearch/store/status.py` | `set_status()`, `status_counts()` for `stage_status` |
+  | `imgsearch/stages/runner.py` | `run_stage(stage, ctx)`: runs one stage over every pending image |
+
+- **Writing a stage.** Implement the `Stage` protocol: `name`, `version` (read it from
+  `config.stages`), `requires`, `load(ctx)`, `run(image, ctx)` and `unload()`. Run it with
+  `run_stage(stage, Context(config, conn))`. The runner picks images whose row for the stage
+  is missing, not `done`, or from another version, and whose `requires` stages are `done`.
+  A failing image is recorded as `failed` with the error text, and the others continue.
+  `unload()` is always called, even if `load()` failed.
+- Tests use a temp config and DB per test (fixtures in `tests/conftest.py`).
 - `CLAUDE.md` lists the rules every coding agent follows. `.claude/settings.json` sets up:
   - a hook that blocks writes into `originals_root`
   - a hook that runs ruff on every edited `.py` file

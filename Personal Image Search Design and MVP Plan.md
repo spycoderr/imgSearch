@@ -191,6 +191,19 @@ class ChatAdapter(Protocol):                            # later: WhatsApp, Teleg
 
 **Configuration.** One `config.yaml` holds `originals_root`, `derivatives_root`, `db_path`, model names and per-stage versions. No path or model name appears in code.
 
+**Changes during build**
+
+Deviations from the sketches above, with the reason. The code is the reference for exact signatures.
+
+- **M0 – layout.** `config.yaml`, `tests/`, `eval/` and `docs/` sit at the project root, not inside `imgsearch/`. The originals-protection hook reads `config.yaml` from the root, and tests/eval are not part of the installed package. Relative paths in `config.yaml` resolve against the folder holding it.
+- **M0 – one interfaces module.** All protocols and shared dataclasses live in `imgsearch/interfaces.py`. `Context` (not defined in the sketch) holds `config` and the open DB connection `conn`. `Result.signals` is `dict[signal, (rank, score)]`.
+- **M0 – `Stage` gains `load(ctx)` and `unload()`.** A stage loads its model once and frees it at the end, so only one heavy model is in memory (16GB limit). `run(image, ctx)` stays per image. The runner skips `load` when there is nothing to do and always calls `unload`, including when `load` or an image fails, so `unload` must cope with a partly loaded stage.
+- **M0 – stage versions live in `config.yaml` (`stages:`).** Stage implementations should read their `version` from `config.stages[name]`.
+- **M0 – runner re-run rule.** An image is picked when its stage row is missing, in any state other than `done` (failed, or `running` left by a crash), or has a different version. `requires` checks only that the upstream stage is `done`, not its version.
+- **M0 – `embeddings` is a plain table** `(image_id, model, vec BLOB, PRIMARY KEY(image_id, model))`, not a sqlite-vec virtual table. sqlite-vec's distance functions scan it, which is fast enough at this library size, and a model swap can change the vector size without a schema change. Revisit with D1 if vector search gets slow.
+- **M0 – one FTS5 table** `text_fts(image_id UNINDEXED, kind UNINDEXED, text)` with `kind` = `ocr` or `caption`. Stages write through `store.text.save_ocr` / `save_caption`, which update the base row and the FTS row in one transaction; no stage touches `text_fts` directly.
+- **M0 – schema constraints.** The plan's columns are kept as listed, plus foreign keys to `images(id)`, `NOT NULL` on keys and text columns, and a `CHECK` on `stage_status.state`. Schema changes are numbered `.sql` files in `imgsearch/store/migrations/`, tracked with `PRAGMA user_version` and applied when the DB is opened.
+
 ## Query flow
 
 A query takes five steps; each is a separate function so it can be tested alone.

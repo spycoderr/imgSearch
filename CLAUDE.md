@@ -23,8 +23,8 @@ Never use `pip install`. Never run in Docker.
 
 ## Hard rules
 
-- Python 3.12. Code lives under `imgsearch/` using the plan's layout
-  (`sources/ stages/ models/ store/ search/ cli.py`, `eval/`, `tests/`).
+- Python 3.12. Package code lives under `imgsearch/` (`sources/ stages/ models/ store/
+  search/ cli.py`). `config.yaml`, `tests/`, `eval/` and `docs/` sit at the project root.
 - **Originals are read-only.** No task writes, moves, renames or chmods anything under
   `originals_root`. A hook (`.claude/hooks/protect_originals.py`) blocks this; don't work around it.
 - Stages are idempotent and record `stage_status`. Re-running does nothing unless the stage
@@ -35,6 +35,21 @@ Never use `pip install`. Never run in Docker.
 - Each model task adds a benchmark (seconds per image, peak memory) to `docs/benchmarks.md`.
 - Image identity is the SHA-256 of the original bytes; the DB stores only paths relative to
   `originals_root`.
+
+## Code style: keep it simple
+
+- Prefer plain functions and the standard library. Use classes only where the plan's
+  interfaces need them (`imgsearch/interfaces.py`).
+- Build only what the current task needs. No speculative options, plugin registries,
+  factories or abstraction layers beyond the plan's interfaces.
+- Plain `sqlite3` with SQL strings; no ORM. Schema changes go in a new numbered file in
+  `imgsearch/store/migrations/`; never edit an applied one.
+- No hacks: no `sys.path` edits, monkeypatching, broad `except Exception: pass`,
+  sleeps/retries to hide problems, skipped tests, or lint suppressions without a one-line reason.
+- Errors fail loudly. Catch exceptions only where the plan requires it (the stage runner
+  records failures; the query rewriter falls back).
+- If something only works with a workaround, stop and report it instead of hacking around it.
+- Small modules, clear names, type hints. Comments only where the reason isn't obvious.
 
 ## Mac-specific notes
 
