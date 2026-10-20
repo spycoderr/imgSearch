@@ -2,7 +2,6 @@
 
 import dataclasses
 import json
-import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
@@ -11,10 +10,10 @@ from typing import Annotated
 import typer
 
 from imgsearch.config import DEFAULT_CONFIG_PATH, Config, load_config
-from imgsearch.interfaces import Candidate, Context, ParsedQuery
+from imgsearch.interfaces import Context
 from imgsearch.models.rewriter import OllamaRewriter
-from imgsearch.search.text import TextRetriever, best_snippet
-from imgsearch.search.vector import VectorRetriever
+from imgsearch.search.hybrid import SIGNALS, open_searcher
+from imgsearch.search.show import response_lines
 from imgsearch.sources.local import LocalFolderSource
 from imgsearch.stages.caption import CaptionStage
 from imgsearch.stages.embed import EmbedStage
@@ -89,7 +88,7 @@ def ingest(ctx: typer.Context) -> None:
         raise typer.Exit(1)
 
 
-# ---- M3: generic stage runner and text search ----
+# ---- M3: generic stage runner ----
 
 # Stages runnable with `imgsearch run <name>`. Each is built as `cls(config)`.
 # Ingest is not listed: `imgsearch ingest` also registers new files first.
@@ -131,59 +130,6 @@ def run_command(
         raise typer.Exit(1)
 
 
-@app.command("search-text")
-def search_text(
-    ctx: typer.Context,
-    query: Annotated[str, typer.Argument(help="Words to find in OCR text and captions.")],
-    k: Annotated[int | None, typer.Option(help="Results to show (default search.top_k).")] = None,
-) -> None:
-    """Full-text search over OCR text and captions. The query is used as given (no rewrite)."""
-    config: Config = ctx.obj
-    q = ParsedQuery(english=query, original=query)
-    with closing(connect(config)) as conn:
-        candidates = TextRetriever(conn).retrieve(q, k or config.search.top_k)
-        for c in candidates:
-            relpath = conn.execute(
-                "SELECT orig_relpath FROM images WHERE id = ?", (c.image_id,)
-            ).fetchone()[0]
-            typer.echo(f"{c.rank:>2}  {c.score:8.4f}  {relpath}")
-            typer.echo(f"    {best_snippet(conn, c.image_id, q)}")
-    if not candidates:
-        typer.echo("no matches")
-
-
-# ---- M2: vector search ----
-
-
-@app.command("search-vec")
-def search_vec(
-    ctx: typer.Context,
-    query: str,
-    k: Annotated[int | None, typer.Option(help="Results to show (default: search.top_k).")] = None,
-) -> None:
-    """Vector-only search: embed QUERY as English text and print the nearest images."""
-    from imgsearch.models.siglip import SiglipEmbedder  # loads torch; only this command needs it
-
-    config: Config = ctx.obj
-    embedder = SiglipEmbedder(config.models.embedder)
-    with closing(connect(config)) as conn:
-        retriever = VectorRetriever(conn, embedder, config.models.embedder)
-        candidates = retriever.retrieve(
-            ParsedQuery(english=query, original=query), k or config.search.top_k
-        )
-        for line in candidate_lines(conn, candidates):
-            typer.echo(line)
-
-
-def candidate_lines(conn: sqlite3.Connection, candidates: list[Candidate]) -> list[str]:
-    """One line per candidate: rank, score and the original's relative path."""
-    lines = []
-    for c in candidates:
-        row = conn.execute("SELECT orig_relpath FROM images WHERE id = ?", (c.image_id,)).fetchone()
-        lines.append(f"{c.rank:>3}  {c.score:.4f}  {row['orig_relpath']}")
-    return lines
-
-
 @app.command()
 def rewrite(ctx: typer.Context, query: str) -> None:
     """Rewrite a query into English JSON with the rewrite LLM (falls back to the query as given)."""
@@ -193,3 +139,33 @@ def rewrite(ctx: typer.Context, query: str) -> None:
     elapsed = time.perf_counter() - start
     typer.echo(json.dumps(dataclasses.asdict(parsed), ensure_ascii=False, indent=2))
     typer.echo(f"took {elapsed:.2f}s")
+
+
+# ---- M5: hybrid search ----
+
+
+@app.command()
+def search(
+    ctx: typer.Context,
+    query: str,
+    k: Annotated[int | None, typer.Option(help="Results to show (default search.top_k).")] = None,
+    no_rewrite: Annotated[
+        bool, typer.Option("--no-rewrite", help="Search the query as given.")
+    ] = False,
+    signals: Annotated[
+        str, typer.Option(help="Comma-separated retrievers to use: vector, text or both.")
+    ] = ",".join(SIGNALS),
+) -> None:
+    """Hybrid search: rewrite QUERY to English, run vector and full-text search, fuse with RRF."""
+    config: Config = ctx.obj
+    names = [s.strip() for s in signals.split(",") if s.strip()]
+    if not names or any(s not in SIGNALS for s in names):
+        raise typer.BadParameter(f"choose from: {', '.join(SIGNALS)}", param_hint="--signals")
+    with closing(connect(config)) as conn:
+        start = time.perf_counter()
+        searcher = open_searcher(config, conn, signals=names, rewrite=not no_rewrite)
+        loaded = time.perf_counter() - start
+        response = searcher.search(query, k=k, rewrite=not no_rewrite)
+    for line in response_lines(response):
+        typer.echo(line)
+    typer.echo(f"model load: {loaded:.2f}s")

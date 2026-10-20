@@ -66,20 +66,3 @@ class TextRetriever:
             Candidate(image_id=image_id, rank=rank, score=score, signal=SIGNAL)
             for rank, (image_id, score) in enumerate(best.items(), start=1)
         ]
-
-
-def best_snippet(conn: sqlite3.Connection, image_id: str, q: ParsedQuery) -> str:
-    """The matching text around the query words in an image's best row, for display.
-    Matched words are wrapped in [ ]. Returns "" when nothing matches."""
-    expression = match_expression(q.english, q.original)
-    if not expression:
-        return ""
-    row = conn.execute(
-        "SELECT kind, snippet(text_fts, 2, '[', ']', '…', 12) FROM text_fts"
-        " WHERE text_fts MATCH ? AND image_id = ? ORDER BY bm25(text_fts) LIMIT 1",
-        (expression, image_id),
-    ).fetchone()
-    if row is None:
-        return ""
-    kind, snippet = row
-    return f"{kind}: " + " ".join(snippet.split())

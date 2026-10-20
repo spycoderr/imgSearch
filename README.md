@@ -22,8 +22,8 @@ named next to them.
 | M2 | `embed` stage (SigLIP 2) and vector retriever | done |
 | M3 | `ocr` stage (Apple Vision) and full-text search | done |
 | M4 | `caption` stage (Qwen-VL via MLX) | done |
-| M5 | Hybrid search with RRF fusion, `imgsearch search` | not started |
-| M6 | Query rewriter for Hinglish/Hindi (Ollama) | done (wired into search in M5) |
+| M5 | Hybrid search with RRF fusion, `imgsearch search` | done |
+| M6 | Query rewriter for Hinglish/Hindi (Ollama) | done (wired into search by M5) |
 | M7 | Eval harness: recall@5 report and HTML contact sheet | not started |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
@@ -91,12 +91,10 @@ Unknown keys are an error. Use another config file with `uv run imgsearch --conf
 ```sh
 uv run imgsearch status                       # image count, per-stage counts by state (M0)
 uv run imgsearch ingest                       # register new photos, write derivatives (M1)
-uv run imgsearch search-vec "a plate of food" # vector-only search (M2)
 uv run imgsearch search "goa wali pizza"      # hybrid search, top 5 (M5; rewrite from M6)
 ```
 
-`status` creates the database on first run. `status` and `ingest` exist so far; the others
-are *(planned)*. On a fresh DB it prints zeros for every configured stage; `not run` counts
+`status` creates the database on first run. On a fresh DB it prints zeros for every configured stage; `not run` counts
 images with no row for that stage yet; `outdated` counts `done` rows from a stage version
 other than the one in `config.yaml` (they re-run on the next run of that stage).
 
@@ -149,7 +147,7 @@ the P2 bulk index should skip files whose path, size and mtime are unchanged.
 
 ```sh
 uv run imgsearch run ocr                  # OCR every ingested image that needs it
-uv run imgsearch search-text "dubai bazaar" [--k 5]
+uv run imgsearch search "dubai bazaar" --signals text --no-rewrite   # text search only
 ```
 
 `imgsearch run <stage>` is the generic way to run one stage; `run ocr` is the only stage it
@@ -164,20 +162,20 @@ one per line in `ocr.text` and in `text_fts`. An image with no text stores `""` 
 Known gap: ocrmac returns no lines, rather than raising, when the Vision request itself
 fails, so such an image is also stored as `""`.
 
-`search-text` searches all of `text_fts` (OCR text now, captions once M4 runs), ranked by
+Text search (`--signals text`; `search-text` until M5) searches all of `text_fts` (OCR text now, captions once M4 runs), ranked by
 bm25, one result per image. The query is used as given (no rewrite). It is split into words
 (letters, digits and combining marks, so Devanagari works); each word is quoted, so
 punctuation and FTS operators such as `AND`, `NEAR`, `-` or `*` are plain words. Common
 English stopwords and photo words (`photo`, `picture`, `image`, `pic`, ...) are dropped, and
 the rest are joined with `OR`. Matching is on whole words, with no stemming: `pizza` does not
-match `pizzas`. Each result line shows rank, score (`-bm25`, higher is better) and the
-original's path, then the matching text with the matched words in `[ ]`.
+match `pizzas`. Its score is `-bm25` (higher is better); `imgsearch search` prints its rank under
+`text #N` (see "Search (M5)").
 
 ### Embeddings and vector search (M2)
 
 ```sh
 uv run imgsearch run embed                       # embed every ingested image that needs it
-uv run imgsearch search-vec "a plate of food" [--k 5]
+uv run imgsearch search "a plate of food" --signals vector --no-rewrite   # vector search only
 ```
 
 The `embed` stage needs `ingest` to be done. It reads each image's derivative (never the
@@ -189,10 +187,9 @@ model name adds new rows and leaves the old ones alone. Re-running does nothing 
 `stages.embed` changes; a re-run replaces the vectors. The model is loaded once per run and
 freed at the end (including the MPS cache).
 
-`search-vec` embeds the query with the text tower (lowercased, padded/truncated to 64 tokens,
+Vector search (`--signals vector`; `search-vec` until M5) embeds the query with the text tower (lowercased, padded/truncated to 64 tokens,
 as SigLIP 2 was trained) and ranks the stored vectors for the configured model by cosine
-distance (sqlite-vec `vec_distance_cosine`). Each line shows rank, score (cosine similarity,
-higher is better) and the original's path. The query is used as given (no rewrite). SigLIP's
+distance (sqlite-vec `vec_distance_cosine`). Its score is cosine similarity (higher is better). SigLIP's
 raw similarities are small (about 0.0–0.2 for a good match); only the order matters. The
 command takes about 5 s, mostly loading torch and the model.
 
@@ -251,7 +248,7 @@ and finally reranking and fine-tuning against the measured baseline. See the pla
 
 ```sh
 uv run imgsearch run caption              # caption every ingested image that needs it
-uv run imgsearch search-text "kit kat"    # captions are searched together with OCR text
+uv run imgsearch search "kit kat"         # captions are searched together with OCR text
 ```
 
 The `caption` stage describes each derivative with a vision-language model on MLX
@@ -278,8 +275,7 @@ uv run imgsearch rewrite "mummy ke saath Goa wali pizza ki photo"
 
 `OllamaRewriter` (`imgsearch/models/rewriter.py`) turns an English, Hindi or Hinglish query
 into a `ParsedQuery`: `english`, `original`, `people`, `date_range` and `place`. `rewrite`
-prints it as JSON, followed by the time taken. M5 wires it into `search()`; until then it is
-only reachable from this command.
+prints it as JSON, followed by the time taken. `imgsearch search` calls it first (M5).
 
 - It needs Ollama 0.40.6 or later (`brew services start ollama`) and the model pulled:
   `ollama pull qwen2.5:7b`.
@@ -292,5 +288,52 @@ only reachable from this command.
   `english`) logs a warning and returns the query unchanged as both `english` and `original`.
 - Ollama keeps the model loaded for its default 5 minutes after the last call (about 4.6 GB).
   A cold call takes about 5–9 s, a warm one about 1.7 s (see `docs/benchmarks.md`).
-- `eval/rewrite_examples.yaml` holds 20 example queries (10 Hinglish, 5 Devanagari,
-  5 English) with hand-written expected rewrites; `docs/reports/M6.md` shows the outputs.
+- `eval/rewrite_examples.yaml` holds 21 example queries (11 Hinglish, 5 Devanagari,
+  5 English; M5 added "kal wali shaadi ki photos") with hand-written expected rewrites; `docs/reports/M6.md` shows the outputs.
+- `date_range` is kept only if the query has a digit-based year or date (`2019`, `15/08`,
+  `२०१९`); a date the model infers from "kal" or "last Diwali" is dropped (M5, review W1).
+  The prompt's `{today}` placeholder is filled with today's date.
+
+## Search (M5)
+
+```sh
+uv run imgsearch search "mummy ke saath Goa wali pizza ki photo"
+uv run imgsearch search "dubai bazaar" --k 10
+uv run imgsearch search "a white dog" --no-rewrite            # skip the rewrite LLM
+uv run imgsearch search "dubai bazaar" --signals text          # one retriever only
+```
+
+The query is rewritten to English (M6), then the vector retriever searches with `english`
+and the full-text retriever with `english` and the original text. Each returns up to
+`search.per_retriever_k` (50) images. The two rankings are merged with Reciprocal Rank
+Fusion: score = Σ 1 / (`search.rrf_k` + rank), with `rrf_k` = 60. Ties go to the better
+single rank, then the image id. The top `--k` (default `search.top_k`, 5) are printed:
+
+```
+searched: white dog sitting on the carpet  (rewritten from: safed kutta carpet pe baitha hua)
+signals: vector, text
+ 1  0.0320  IMG_20180121_130605.jpg  [text #4, vector #1]
+    A fluffy white dog wearing a red patterned vest lies on a red and beige ornate rug, looking up at …
+...
+time: rewrite 1.78s, retrieval 0.11s, total 1.89s
+model load: 5.88s
+```
+
+Each result shows the rank, the fused score, the original's path (relative to
+`originals_root`), and each retriever that found it with its rank there. Then the first
+~100 characters of the caption. If Ollama is down or the reply is invalid, the query is
+searched as given, and the first line says `rewrite skipped: <reason>`.
+
+- `--no-rewrite` searches the query as given. `--signals vector` or `--signals text` uses
+  one retriever. `--signals text --no-rewrite` loads no model and needs no Ollama
+  (about 0.4 s).
+- A full search loads SigLIP (about 6 s per command), then takes about 1.7 s warm, almost
+  all of it the rewrite. The first query after 5 idle minutes waits 5–9 s for Ollama to
+  load the model.
+- In code, build once and reuse: `searcher = open_searcher(config, conn)`, then
+  `searcher.search(query, k=None, rewrite=True, signals=None)` returns a `SearchResponse`.
+  That holds the `ParsedQuery` searched, the `Result`s and the timings
+  (`imgsearch/search/hybrid.py`).
+- **Memory: don't search while a caption run is going.** Search holds about 2.2 GB
+  (SigLIP) plus 4.6 GB in Ollama, and `imgsearch run caption` needs 4–6 GB. Together
+  that is too much for 16 GB.

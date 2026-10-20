@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
@@ -33,7 +33,14 @@ class RewriterConfig(_Strict):
     name: str
     url: str
     timeout_s: float
-    prompt: str  # system prompt for the rewrite LLM
+    prompt: str  # system prompt for the rewrite LLM; `{today}` is replaced by today's date
+
+    @field_validator("prompt")
+    @classmethod
+    def _one_today_placeholder(cls, value: str) -> str:
+        if value.count("{today}") != 1:
+            raise ValueError("the rewriter prompt must contain the placeholder {today} once")
+        return value
 
 
 class OcrConfig(_Strict):

@@ -3,7 +3,6 @@ import sqlite3
 import numpy as np
 import pytest
 
-from imgsearch.cli import candidate_lines
 from imgsearch.config import Config, EmbedderConfig
 from imgsearch.interfaces import ParsedQuery
 from imgsearch.search.vector import VectorRetriever
@@ -67,8 +66,3 @@ def test_wrong_query_length_raises(library: sqlite3.Connection, small):
     retriever = VectorRetriever(library, FixedTextEmbedder([1.0, 0.0, 0.0]), small)
     with pytest.raises(ValueError):
         retriever.retrieve(query("x"), k=5)
-
-
-def test_candidate_lines_show_rank_score_and_relpath(library: sqlite3.Connection, small):
-    got = VectorRetriever(library, FixedTextEmbedder([1.0, 0.0]), small).retrieve(query("x"), k=2)
-    assert candidate_lines(library, got) == ["  1  1.0000  east.jpg", "  2  0.6000  northeast.jpg"]

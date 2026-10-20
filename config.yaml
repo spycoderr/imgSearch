@@ -28,7 +28,7 @@ models:
     prompt: |
       You rewrite search queries for a personal photo library. A query can be in English,
       Hindi (Devanagari script) or Hinglish (Hindi written in Latin letters, often mixed
-      with English).
+      with English). Today's date is {today}.
 
       Return JSON with these fields:
       - english: the query translated into English. Translate every Hindi and Hinglish

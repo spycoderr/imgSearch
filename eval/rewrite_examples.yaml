@@ -13,6 +13,7 @@ queries:
   - {lang: hinglish, query: "aadhaar card ki photo", expect: "photo of an Aadhaar card"}
   - {lang: hinglish, query: "Diwali pe diye aur rangoli", expect: "diyas and rangoli at Diwali"}
   - {lang: hinglish, query: "station pe train ka intezaar karte hue Rahul", expect: "Rahul waiting for the train at the station"}
+  - {lang: hinglish, query: "kal wali shaadi ki photos", expect: "photos of yesterday's wedding"}  # W1: no date_range
   - {lang: hindi, query: "माँ के साथ मंदिर की फोटो", expect: "photo with mom at the temple"}
   - {lang: hindi, query: "बिल्ली खिड़की पर बैठी है", expect: "cat sitting on the window"}
   - {lang: hindi, query: "जयपुर में परिवार की तस्वीर", expect: "family photo in Jaipur"}

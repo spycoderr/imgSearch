@@ -52,6 +52,7 @@ class ParsedQuery:
     people: list[str] = field(default_factory=list)
     date_range: tuple[str, str] | None = None  # ISO 8601 start, end
     place: str | None = None
+    rewrite_error: str | None = None  # set when the rewrite failed and the query is used as given
 
 
 @dataclass(frozen=True)
@@ -66,13 +67,15 @@ class Candidate:
 
 @dataclass(frozen=True)
 class Result:
-    """One search result handed to a chat adapter."""
+    """One search result handed to a chat adapter. Paths are relative, as stored in the DB."""
 
     image_id: str
-    derivative_path: str | None
+    orig_relpath: str  # relative to config.originals_root
+    derivative_path: str | None  # relative to config.derivatives_root
     thumb_path: str | None
     caption: str | None
-    signals: dict[str, tuple[int, float]]  # signal -> (rank, score)
+    score: float  # fused RRF score, higher is better
+    signals: dict[str, tuple[int, float]]  # signal -> (rank, score) in that retriever
 
 
 @dataclass(frozen=True)

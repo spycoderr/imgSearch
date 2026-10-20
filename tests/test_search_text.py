@@ -1,12 +1,9 @@
 import sqlite3
-from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from imgsearch.cli import app
 from imgsearch.interfaces import ParsedQuery
-from imgsearch.search.text import TextRetriever, best_snippet, match_expression, query_words
+from imgsearch.search.text import TextRetriever, match_expression, query_words
 from imgsearch.store.text import save_caption, save_ocr
 
 
@@ -131,25 +128,3 @@ def test_user_text_never_raises(library, text):
     found = ids(library, q(text))
     if "dosa" in text.lower():
         assert "menu" in found
-
-
-def test_best_snippet(library):
-    assert (
-        best_snippet(library, "menu", q("dosa")) == "ocr: MENU Paneer Tikka 250 Masala [Dosa] 120"
-    )
-    assert best_snippet(library, "dog", q("dosa")) == ""
-
-
-def test_cli_search_text(config_path: Path, library):
-    result = CliRunner().invoke(app, ["--config", str(config_path), "search-text", "masala dosa"])
-    assert result.exit_code == 0, result.output
-    lines = result.output.splitlines()
-    assert lines[0].split()[0] == "1"
-    assert lines[0].split()[2] == "menu.jpg"
-    assert "[Masala] [Dosa]" in lines[1]
-
-
-def test_cli_search_text_no_match(config_path: Path, library):
-    result = CliRunner().invoke(app, ["--config", str(config_path), "search-text", "?! :"])
-    assert result.exit_code == 0, result.output
-    assert result.output.strip() == "no matches"

@@ -129,3 +129,25 @@ Candidates measured the same way during the model comparison (Q8):
 | `qwen2.5:7b` (chosen) | 4.7 GB | 4.6 GB | 8.8 s | 1.70 / 1.96 s |
 | `gemma3:4b` | 3.4 GB | 2.2 GB | 6.6 s | 2.03 / 2.19 s |
 
+
+## M5: search
+
+Hybrid search (`open_searcher` once, then `Searcher.search` per query) on the Mac mini M4,
+with no other model running. SigLIP 2 runs on MPS, and `qwen2.5:7b` on Ollama 0.40.6. Before
+the first query, Ollama was emptied with `ollama stop`. Times are wall time inside
+`search()`, over the 14 real queries in `docs/reports/M5.md`, all in one process. Memory is
+from `/usr/bin/time -l .venv/bin/imgsearch search ...` (peak memory footprint) and
+`ollama ps`.
+
+| Measure | Value |
+| --- | --- |
+| `open_searcher`: import torch, load SigLIP, create rewriter | 5.95 s |
+| First query, cold (Ollama loads the model) | 9.24 s: rewrite 8.71 s, retrieval 0.53 s |
+| Warm query, median / max (13 queries) | 1.68 / 2.12 s |
+| Warm rewrite, median / max | 1.64 / 2.08 s |
+| Warm retrieval (vector + text + RRF + lookup), median / max | 0.046 / 0.058 s |
+| `imgsearch search "..."` whole command, Ollama warm | 8.6–9.4 s |
+| `imgsearch search "..." --signals text --no-rewrite` whole command | 0.41 s |
+| Search process peak memory footprint | 2.20–2.23 GB |
+| Ollama resident while loaded | 4.6 GB |
+| Total while searching | ~6.8 GB (don't run alongside the 4–6 GB caption stage) |
