@@ -74,3 +74,7 @@ search:
   top_k: 5
   per_retriever_k: 50
   rrf_k: 60
+
+eval:
+  queries: eval/queries.yaml   # the labelled query set
+  runs_dir: eval/runs          # one folder per run; git-ignored (personal photos)

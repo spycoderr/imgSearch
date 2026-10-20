@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import transformers
 from PIL import Image
 from transformers import AutoModel, AutoProcessor
 
@@ -21,6 +22,10 @@ class SiglipEmbedder:
         self.dim = config.dim
         self.device = config.device
         self.text_max_length = config.text_max_length
+        # Quiet load noise (review N1): the "Loading weights" bar, and warnings such as the
+        # checkpoint's out-of-vocab bos/eos ids (harmless, see the M2 report). Errors still show.
+        transformers.logging.set_verbosity_error()
+        transformers.logging.disable_progress_bar()
         self.processor = AutoProcessor.from_pretrained(config.name)
         self.model = AutoModel.from_pretrained(config.name).to(self.device).eval()
 

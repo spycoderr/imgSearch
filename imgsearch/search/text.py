@@ -6,6 +6,7 @@ import unicodedata
 from imgsearch.interfaces import Candidate, ParsedQuery
 
 SIGNAL = "text"
+KINDS = ("ocr", "caption")  # the `kind` values in text_fts
 
 # Dropped from queries (any case): they match almost every caption ("This photo shows a..."),
 # so they would add noise to every fused result.
@@ -41,20 +42,27 @@ class TextRetriever:
 
     One query covers the words of both `q.english` and `q.original`. Each image appears
     once, at its best-scoring row. `Candidate.score` is `-bm25`, so higher is better.
+    `kinds` limits the rows searched, e.g. `("ocr",)` to leave captions out (the M7
+    ablation); the default searches every kind.
     """
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: sqlite3.Connection, kinds: tuple[str, ...] = KINDS) -> None:
+        unknown = [k for k in kinds if k not in KINDS]
+        if not kinds or unknown:
+            raise ValueError(f"kinds must be some of {KINDS}, got {kinds}")
         self.conn = conn
+        self.kinds = kinds
 
     def retrieve(self, q: ParsedQuery, k: int) -> list[Candidate]:
         expression = match_expression(q.english, q.original)
         if not expression:
             return []
         # bm25() can't be used under GROUP BY, so keep each image's first (best) row here.
+        marks = ",".join("?" * len(self.kinds))
         rows = self.conn.execute(
             "SELECT image_id, bm25(text_fts) FROM text_fts WHERE text_fts MATCH ?"
-            " ORDER BY bm25(text_fts), image_id",
-            (expression,),
+            f" AND kind IN ({marks}) ORDER BY bm25(text_fts), image_id",
+            (expression, *self.kinds),
         )
         best: dict[str, float] = {}
         for image_id, bm25 in rows:

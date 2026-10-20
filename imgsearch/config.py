@@ -61,6 +61,11 @@ class SearchConfig(_Strict):
     rrf_k: int
 
 
+class EvalPaths(_Strict):
+    queries: Path
+    runs_dir: Path
+
+
 class Config(_Strict):
     originals_root: Path
     derivatives_root: Path
@@ -68,6 +73,7 @@ class Config(_Strict):
     models: ModelsConfig
     stages: dict[str, str]  # stage name -> version
     search: SearchConfig
+    eval: EvalPaths
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -77,4 +83,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
     for key in ("originals_root", "derivatives_root", "db_path"):
         if key in data:  # a missing key is reported by validation below
             data[key] = path.parent / Path(data[key]).expanduser()
+    for key in ("queries", "runs_dir"):
+        if key in data.get("eval", {}):
+            data["eval"][key] = path.parent / Path(data["eval"][key]).expanduser()
     return Config.model_validate(data)
