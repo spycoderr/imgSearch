@@ -2,7 +2,10 @@
 """PreToolUse hook: block writes into the originals folder.
 
 Originals are read-only (plan D8). The originals root is `originals_root` in
-config.yaml at the project root, falling back to data/originals.
+config.yaml at the project root, falling back to data/originals. `${VAR}` in it is
+expanded from the environment, else from the project's .env (KEY=VALUE lines). If a
+variable can't be resolved, both the unexpanded path and data/originals are protected,
+and a block says why.
 
 Exit 0 = allow (normal permission flow continues). Exit 2 = block; stderr is
 shown to Claude as the reason. Standard library only: this runs outside the
@@ -63,6 +66,36 @@ def read_originals_root(proj: Path) -> str:
             if value:
                 return value
     return DEFAULT_ROOT
+
+
+def read_env_file(proj: Path) -> dict[str, str]:
+    """KEY=VALUE lines of the project's .env; comments and blank lines skipped."""
+    env: dict[str, str] = {}
+    try:
+        lines = (proj / ".env").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return env
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        env[key.strip().removeprefix("export ").strip()] = value.strip().strip("'\"")
+    return env
+
+
+def expand_vars(raw: str, env: dict[str, str]) -> tuple[str, list[str]]:
+    """`raw` with ${VAR} replaced (environment first, then .env), and any unset names."""
+    missing: list[str] = []
+
+    def lookup(m: re.Match[str]) -> str:
+        value = os.environ.get(m.group(1)) or env.get(m.group(1))
+        if not value:
+            missing.append(m.group(1))
+            return m.group(0)
+        return value
+
+    return re.sub(r"\$\{(\w+)\}", lookup, raw), missing
 
 
 def resolve(p: str, base: Path) -> Path:
@@ -221,12 +254,12 @@ def check_bash(command: str, forms: list[str], cwd: Path, root: Path) -> str | N
     return None
 
 
-def block(reason: str, root: Path) -> None:
+def block(reason: str, root: Path, note: str = "") -> None:
     print(
         f"Blocked by protect_originals hook: {reason}.\n"
         f"The originals folder ({root}) is read-only (plan decision D8). "
         "Write derivatives, thumbnails and test fixtures elsewhere "
-        "(e.g. derivatives_root or a pytest tmp_path).",
+        f"(e.g. derivatives_root or a pytest tmp_path).{note}",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -242,18 +275,30 @@ def main() -> None:
     tool_input = data.get("tool_input") or {}
     proj = project_dir()
     cwd = Path(data.get("cwd") or os.getcwd())
-    root_raw = read_originals_root(proj)
-    root = resolve(root_raw, proj)
+    configured = read_originals_root(proj)
+    expanded, missing = expand_vars(configured, read_env_file(proj))
+    roots_raw = [expanded]
+    note = ""
+    if missing:
+        # Never guess: protect the unexpanded path and the default, and say why.
+        roots_raw = [configured, DEFAULT_ROOT]
+        note = (
+            f"\nNote: {', '.join(missing)} is not set (environment or .env), so originals_root"
+            f" '{configured}' can't be resolved; the hook protects it as written and"
+            f" '{DEFAULT_ROOT}'."
+        )
 
-    if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        target = tool_input.get("file_path") or tool_input.get("notebook_path")
-        if target and is_inside(resolve(target, cwd), root):
-            block(f"{tool} targets '{target}', which is inside the originals", root)
-    elif tool == "Bash":
-        command = tool_input.get("command") or ""
-        reason = check_bash(command, path_forms(root_raw, root, proj, cwd), cwd, root)
-        if reason:
-            block(reason, root)
+    for root_raw in roots_raw:
+        root = resolve(root_raw, proj)
+        if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+            target = tool_input.get("file_path") or tool_input.get("notebook_path")
+            if target and is_inside(resolve(target, cwd), root):
+                block(f"{tool} targets '{target}', which is inside the originals", root, note)
+        elif tool == "Bash":
+            command = tool_input.get("command") or ""
+            reason = check_bash(command, path_forms(root_raw, root, proj, cwd), cwd, root)
+            if reason:
+                block(reason, root, note)
     sys.exit(0)
 
 

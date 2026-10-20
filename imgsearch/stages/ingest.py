@@ -73,7 +73,8 @@ def register_new(source: ImageSource, root: Path, conn: sqlite3.Connection) -> R
 class IngestStage:
     """Fill in metadata and write the derivative and thumbnail for a registered image.
 
-    `derivative_path` and `thumb_path` are stored relative to `derivatives_root`.
+    `derivative_path` is stored relative to `derivatives_root` and `thumb_path` relative to
+    `thumbs_root`.
     `width` and `height` are the original's size after EXIF orientation is applied.
     """
 
@@ -103,13 +104,10 @@ class IngestStage:
         thumb = derivative.copy()
         thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.LANCZOS)
 
-        shard = image.id[:2]
-        derivative_rel = f"derivatives/{shard}/{image.id}.jpg"
-        thumb_rel = f"thumbs/{shard}/{image.id}.jpg"
-        _save_jpeg(
-            derivative, config.derivatives_root / derivative_rel, DERIVATIVE_QUALITY, icc_profile
-        )
-        _save_jpeg(thumb, config.derivatives_root / thumb_rel, THUMB_QUALITY, icc_profile)
+        # Same relative path under both roots: derivatives_root (pen drive), thumbs_root (Mac).
+        rel = f"{image.id[:2]}/{image.id}.jpg"
+        _save_jpeg(derivative, config.derivatives_root / rel, DERIVATIVE_QUALITY, icc_profile)
+        _save_jpeg(thumb, config.thumbs_root / rel, THUMB_QUALITY, icc_profile)
 
         lat, lon = _gps(exif)
         with ctx.conn:
@@ -117,11 +115,11 @@ class IngestStage:
                 "UPDATE images SET derivative_path = ?, thumb_path = ?, width = ?, height = ?,"
                 " taken_at = ?, lat = ?, lon = ?, phash = ? WHERE id = ?",
                 (
-                    derivative_rel,
-                    thumb_rel,
+                    rel,
+                    rel,
                     width,
                     height,
-                    _taken_at(exif),
+                    taken_at(exif),
                     lat,
                     lon,
                     str(imagehash.phash(derivative)),
@@ -155,7 +153,7 @@ def _save_jpeg(img: Image.Image, path: Path, quality: int, icc_profile: bytes | 
     img.save(path, "JPEG", quality=quality, icc_profile=icc_profile)
 
 
-def _taken_at(exif: Image.Exif) -> str | None:
+def taken_at(exif: Image.Exif) -> str | None:
     """EXIF DateTimeOriginal, else DateTime, as naive local time `YYYY-MM-DDTHH:MM:SS`.
 
     Any UTC offset is ignored: users ask by local time ("Diwali evening"). None if missing

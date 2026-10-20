@@ -67,7 +67,7 @@ def evaluate(
     ids = {i for r in records for i in r["expected"]} | {
         res["image_id"] for r in records for res in r["results"]
     }
-    css = thumbs_css(conn, config.derivatives_root, ids)
+    css = thumbs_css(conn, config.thumbs_root, ids)
     sheet = contact_sheet(records, metrics_by_config(records), meta, css, relpaths(conn))
     run_dir = config.eval.runs_dir / started.strftime("%Y%m%d-%H%M%S")
     write_run(run_dir, records, meta, config_path, sheet)
@@ -89,7 +89,7 @@ def write_review(config: Config, conn: sqlite3.Connection) -> Path:
     """The query review sheet, written to `runs_dir/query_review.html`. Returns its path."""
     queries = load_queries(config.eval.queries, conn)
     ids = {i for q in queries for i in q.expected_image_ids}
-    css = thumbs_css(conn, config.derivatives_root, ids)
+    css = thumbs_css(conn, config.thumbs_root, ids)
     html = review_sheet(queries, css, relpaths(conn), counts(queries))
     path = config.eval.runs_dir / "query_review.html"
     path.parent.mkdir(parents=True, exist_ok=True)

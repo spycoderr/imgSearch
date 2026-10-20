@@ -36,14 +36,14 @@ def thumb_class(image_id: str) -> str:
     return "t" + image_id[:16]
 
 
-def thumbs_css(conn: sqlite3.Connection, derivatives_root: Path, image_ids: set[str]) -> str:
+def thumbs_css(conn: sqlite3.Connection, thumbs_root: Path, image_ids: set[str]) -> str:
     """One CSS rule per image, with its 256 px thumbnail as a base64 background."""
     rules = []
     for image_id in sorted(image_ids):
         row = conn.execute("SELECT thumb_path FROM images WHERE id = ?", (image_id,)).fetchone()
         if row is None or row["thumb_path"] is None:
             continue  # the tile then shows its caption text without a picture
-        data = base64.b64encode((derivatives_root / row["thumb_path"]).read_bytes()).decode()
+        data = base64.b64encode((thumbs_root / row["thumb_path"]).read_bytes()).decode()
         rules.append(
             f".{thumb_class(image_id)}{{background-image:url(data:image/jpeg;base64,{data})}}"
         )

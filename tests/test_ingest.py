@@ -143,9 +143,10 @@ def test_derivative_and_thumbnail_paths(config: Config, conn: sqlite3.Connection
     make_jpeg(config.originals_root / "a.jpg", size=(4000, 3000))
     ingest(config, conn)
     r = row(conn, "a.jpg")
-    assert r["derivative_path"] == f"derivatives/{r['id'][:2]}/{r['id']}.jpg"
-    assert r["thumb_path"] == f"thumbs/{r['id'][:2]}/{r['id']}.jpg"
-    with Image.open(config.derivatives_root / r["thumb_path"]) as t:
+    # derivative_path is relative to derivatives_root, thumb_path to thumbs_root.
+    assert r["derivative_path"] == r["thumb_path"] == f"{r['id'][:2]}/{r['id']}.jpg"
+    assert (config.derivatives_root / r["derivative_path"]).is_file()
+    with Image.open(config.thumbs_root / r["thumb_path"]) as t:
         assert (t.format, t.size) == ("JPEG", (256, 192))
     assert int(r["phash"], 16) >= 0 and len(r["phash"]) == 16
 
@@ -209,8 +210,11 @@ def test_icc_profile_kept_only_for_rgb_sources(config: Config, conn: sqlite3.Con
     assert counts == {"done": 2, "failed": 0}
     for name, expected in [("cmyk.jpg", None), ("rgb.jpg", profile)]:
         r = row(conn, name)
-        for rel in (r["derivative_path"], r["thumb_path"]):
-            with Image.open(config.derivatives_root / rel) as d:
+        for path in (
+            config.derivatives_root / r["derivative_path"],
+            config.thumbs_root / r["thumb_path"],
+        ):
+            with Image.open(path) as d:
                 assert d.mode == "RGB"
                 assert d.info.get("icc_profile") == expected, name
 

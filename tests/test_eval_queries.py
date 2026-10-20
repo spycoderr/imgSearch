@@ -76,9 +76,11 @@ def test_rejects_bad_file_shape(tmp_path: Path, library, content):
         load_queries(path, library)
 
 
-def test_project_query_set_has_the_planned_mix():
+def test_project_query_set_has_the_planned_mix(tmp_path: Path):
     # Checks shape and mix only; image ids are checked against the real DB by `eval-review`.
-    config = load_config(DEFAULT_CONFIG_PATH)
+    env_file = tmp_path / ".env"  # stands in for the git-ignored project .env
+    env_file.write_text("IMGSEARCH_STORAGE_ROOT=/Volumes/PEN/imgsearch\n")
+    config = load_config(DEFAULT_CONFIG_PATH, env_file)
     raw = yaml.safe_load(config.eval.queries.read_text(encoding="utf-8"))["queries"]
     langs = [q["language"] for q in raw]
     types = [q["type"] for q in raw]

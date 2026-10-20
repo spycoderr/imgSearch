@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
@@ -18,18 +19,45 @@ from imgsearch.interfaces import Context
 from imgsearch.models.rewriter import OllamaRewriter
 from imgsearch.search.hybrid import SIGNALS, open_searcher
 from imgsearch.search.show import response_lines
+from imgsearch.sources.importer import ImportResult, import_inbox
 from imgsearch.sources.local import LocalFolderSource
 from imgsearch.stages.caption import CaptionStage
 from imgsearch.stages.embed import EmbedStage
 from imgsearch.stages.ingest import IngestStage, register_new
 from imgsearch.stages.ocr import OcrStage
 from imgsearch.stages.runner import run_stage
+from imgsearch.stages.update import UPDATE_STAGES, update
 from imgsearch.store.db import connect
+from imgsearch.store.roots import DriveNotMounted, is_available, require_mounted
 from imgsearch.store.status import status_counts
+from imgsearch.store.verify import verify
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
 STATES = ["done", "failed", "running", "pending", "outdated"]
+NO_ORIGINALS = "pen drive not mounted: full-size images are unavailable"
+
+
+def need_drive(config: Config, *keys: str) -> None:
+    """Exit with a clear message if a root these commands need is on an unmounted drive."""
+    try:
+        require_mounted(config, *keys)
+    except DriveNotMounted as e:
+        typer.echo(f"{e}. Plug it in and try again.", err=True)
+        raise typer.Exit(1) from None
+
+
+def stage_line(name: str, counts: dict[str, int]) -> str:
+    total = counts["done"] + counts["failed"]
+    return f"{name}: {total} processed ({counts['done']} done, {counts['failed']} failed)"
+
+
+def stage_failures(conn: sqlite3.Connection, stage_name: str) -> list[tuple[str, str]]:
+    return conn.execute(
+        "SELECT i.orig_relpath, s.error FROM stage_status s JOIN images i ON i.id = s.image_id"
+        " WHERE s.stage = ? AND s.state = 'failed' ORDER BY i.orig_relpath",
+        (stage_name,),
+    ).fetchall()
 
 
 @app.callback()
@@ -61,21 +89,20 @@ def status(ctx: typer.Context) -> None:
         not_run = total - sum(by_state.values())
         cells = [by_state.get(s, 0) for s in STATES] + [not_run]
         typer.echo(f"{stage:<10}" + "".join(f"{n:>9}" for n in cells))
+    drive = "mounted" if is_available(config.originals_root) else "NOT MOUNTED"
+    typer.echo(f"pen drive: {drive} (originals: {config.originals_root})")
 
 
 @app.command()
 def ingest(ctx: typer.Context) -> None:
     """Register new photos under originals_root, then read EXIF and write derivatives."""
     config: Config = ctx.obj
+    need_drive(config, "originals_root", "derivatives_root")
     with closing(connect(config)) as conn:
         found = register_new(LocalFolderSource(config.originals_root), config.originals_root, conn)
         stage = IngestStage(config)
         counts = run_stage(stage, Context(config=config, conn=conn))
-        failures = conn.execute(
-            "SELECT i.orig_relpath, s.error FROM stage_status s JOIN images i ON i.id = s.image_id"
-            " WHERE s.stage = ? AND s.state = 'failed' ORDER BY i.orig_relpath",
-            (stage.name,),
-        ).fetchall()
+        failures = stage_failures(conn, stage.name)
 
     typer.echo(
         f"register: {found.new} new, {found.known} already registered,"
@@ -83,10 +110,7 @@ def ingest(ctx: typer.Context) -> None:
     )
     for relpath, error in found.unreadable:
         typer.echo(f"  unreadable: {relpath}: {error}", err=True)
-    typer.echo(
-        f"ingest: {counts['done'] + counts['failed']} processed"
-        f" ({counts['done']} done, {counts['failed']} failed)"
-    )
+    typer.echo(stage_line(stage.name, counts))
     for relpath, error in failures:
         typer.echo(f"  failed: {relpath}: {error}", err=True)
     if failures or found.unreadable:
@@ -116,19 +140,13 @@ def run_command(
             f"unknown stage {stage_name!r}; choose from: {', '.join(STAGES)}",
             param_hint="STAGE",
         )
+    need_drive(config, "derivatives_root")  # every stage reads the derivatives
     stage = STAGES[stage_name](config)
     with closing(connect(config)) as conn:
         counts = run_stage(stage, Context(config=config, conn=conn))
-        failures = conn.execute(
-            "SELECT i.orig_relpath, s.error FROM stage_status s JOIN images i ON i.id = s.image_id"
-            " WHERE s.stage = ? AND s.state = 'failed' ORDER BY i.orig_relpath",
-            (stage.name,),
-        ).fetchall()
+        failures = stage_failures(conn, stage.name)
 
-    typer.echo(
-        f"{stage.name}: {counts['done'] + counts['failed']} processed"
-        f" ({counts['done']} done, {counts['failed']} failed)"
-    )
+    typer.echo(stage_line(stage.name, counts))
     for relpath, error in failures:
         typer.echo(f"  failed: {relpath}: {error}", err=True)
     if failures:
@@ -180,6 +198,8 @@ def search(
     for line in response_lines(response):
         typer.echo(line)
     typer.echo(f"model load: {loaded:.2f}s")
+    if not is_available(config.originals_root):
+        typer.echo(f"note: {NO_ORIGINALS} (results come from the index on the Mac)")
 
 
 # ---- M7: evaluation ----
@@ -215,3 +235,66 @@ def eval_review(ctx: typer.Context) -> None:
     with closing(connect(config)) as conn:
         typer.echo(counts(load_queries(config.eval.queries, conn)))
         typer.echo(f"review sheet: {write_review(config, conn)}")
+
+
+# ---- P1.5-A: import from the inbox, update, verify ----
+
+
+def import_lines(result: ImportResult) -> list[str]:
+    lines = [
+        f"import: {len(result.imported)} imported, {result.duplicates} duplicates,"
+        f" {result.too_new} skipped (too new), {len(result.failed)} failed"
+    ]
+    lines += [f"  imported: {relpath}" for relpath in result.imported]
+    return lines
+
+
+@app.command("import")
+def import_command(ctx: typer.Context) -> None:
+    """Move new photos from the inbox folders into originals_root (no indexing)."""
+    config: Config = ctx.obj
+    need_drive(config, "originals_root")
+    with closing(connect(config)) as conn:
+        result = import_inbox(config, conn)
+    for line in import_lines(result):
+        typer.echo(line)
+    for path, error in result.failed:
+        typer.echo(f"  failed: {path}: {error}", err=True)
+    if result.failed:
+        raise typer.Exit(1)
+
+
+@app.command("update")
+def update_command(ctx: typer.Context) -> None:
+    """Import the inboxes, then run ingest, embed and ocr. Captions are not run."""
+    config: Config = ctx.obj
+    need_drive(config, "originals_root", "derivatives_root")
+    stages = [cls(config) for cls in UPDATE_STAGES]
+    with closing(connect(config)) as conn:
+        result = update(config, conn, stages)
+        failures = {stage.name: stage_failures(conn, stage.name) for stage in stages}
+
+    for line in import_lines(result.imported):
+        typer.echo(line)
+    for path, error in result.imported.failed:
+        typer.echo(f"  failed: {path}: {error}", err=True)
+    for name, stage_counts in result.stages.items():
+        typer.echo(stage_line(name, stage_counts))
+        for relpath, error in failures[name]:
+            typer.echo(f"  failed: {relpath}: {error}", err=True)
+    if result.imported.failed or any(failures.values()):
+        raise typer.Exit(1)
+
+
+@app.command("verify")
+def verify_command(ctx: typer.Context) -> None:
+    """Check every image: original by SHA-256, derivative and thumbnail exist and decode."""
+    config: Config = ctx.obj
+    need_drive(config, "originals_root", "derivatives_root")
+    with closing(connect(config)) as conn:
+        result = verify(config, conn)
+    for relpath, problem in result.problems:
+        typer.echo(f"  {relpath}: {problem}", err=True)
+    typer.echo(f"verify: {result.ok} of {result.images} images ok")
+    if result.problems:
+        raise typer.Exit(1)

@@ -25,6 +25,7 @@ named next to them.
 | M5 | Hybrid search with RRF fusion, `imgsearch search` | done |
 | M6 | Query rewriter for Hinglish/Hindi (Ollama) | done (wired into search by M5) |
 | M7 | Eval harness: recall@5 report and HTML contact sheet | done (baseline in `docs/eval/baseline.md`) |
+| P1.5-A | Pen-drive storage layout, `imgsearch import` (inbox → originals), `update`, `verify` | done |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -55,7 +56,7 @@ M2, M3 and M4 can be built in parallel once M1 lands.
   | --- | --- | --- |
   | Image/text embeddings | `google/siglip2-base-patch16-384` | Hugging Face cache |
   | Captions | `mlx-community/Qwen3-VL-4B-Instruct-4bit` | Hugging Face cache |
-  | Query rewrite | `qwen2.5:3b` | Ollama |
+  | Query rewrite | `qwen2.5:7b` | Ollama |
   | OCR | Apple Vision (built into macOS) | none to download |
 
 ## Setup
@@ -64,7 +65,13 @@ M2, M3 and M4 can be built in parallel once M1 lands.
 uv sync                          # create .venv from uv.lock
 uv run hf download google/siglip2-base-patch16-384
 uv run hf download mlx-community/Qwen3-VL-4B-Instruct-4bit
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:7b
+```
+
+Then tell the project where the external drive's storage folder is:
+
+```sh
+cp .env.example .env    # then edit IMGSEARCH_STORAGE_ROOT
 ```
 
 Add dependencies with `uv add <pkg>` (or `uv add --dev <pkg>`), never `pip install`.
@@ -75,13 +82,27 @@ All paths, model names and stage versions live in `config.yaml` at the project r
 contains none of them. Relative paths resolve against the folder holding `config.yaml`.
 
 ```yaml
-originals_root: data/originals      # read-only; later an external HDD mount
-derivatives_root: data/derivatives  # derivative JPEGs and 256px thumbnails
-db_path: data/imgsearch.db
-models: {embedder: ..., captioner: ..., rewriter: ...}   # names, plus dim/device/url
-stages: {ingest: "1", embed: "1", ocr: "1", caption: "1"}  # bump a version to re-run that stage
-search: {top_k: 5, per_retriever_k: 50, rrf_k: 60}
+originals_root: "${IMGSEARCH_STORAGE_ROOT}/originals"      # pen drive
+derivatives_root: "${IMGSEARCH_STORAGE_ROOT}/derivatives"  # pen drive
+thumbs_root: data/thumbs       # Mac
+db_path: data/imgsearch.db     # Mac; a path under /Volumes is rejected
+inboxes: [data/inbox/phone, data/inbox/camera]   # Mac; Syncthing writes here
+models: {embedder: ..., captioner: ..., rewriter: ..., ocr: ...}
+stages: {ingest: "2", embed: "2", ocr: "1", caption: "1"}  # bump a version to re-run that stage
+search: {top_k: 5, per_retriever_k: 10, rrf_k: 60, default_signals: [vector]}
 ```
+
+**Machine-specific paths live in `.env`**, not in `config.yaml`. `.env` is git-ignored;
+`.env.example` shows its one setting:
+
+```sh
+IMGSEARCH_STORAGE_ROOT=/Volumes/<drive name>/imgsearch
+```
+
+`${VAR}` in a path in `config.yaml` is filled from the environment first, then from `.env`.
+An unset variable stops every command with `IMGSEARCH_STORAGE_ROOT is not set`. **To move
+the storage (another drive, a renamed volume), edit `.env` only.** The originals-protection
+hook reads the same `.env`.
 
 Unknown keys are an error. Use another config file with `uv run imgsearch --config path/to/config.yaml ...`.
 `data/` is git-ignored.
@@ -384,3 +405,69 @@ searched as given, and the first line says `rewrite skipped: <reason>`.
 - **Memory: don't search while a caption run is going.** Search holds about 2.2 GB
   (SigLIP) plus 4.6 GB in Ollama, and `imgsearch run caption` needs 4–6 GB. Together
   that is too much for 16 GB.
+
+## Storage on the pen drive, import and update (P1.5-A)
+
+The layout follows plan D18:
+
+| What | Where | Config key |
+| --- | --- | --- |
+| Originals | pen drive, `$IMGSEARCH_STORAGE_ROOT/originals/YYYY/MM/<name>` | `originals_root` |
+| Derivatives (2048px JPEGs the models read) | pen drive, `$IMGSEARCH_STORAGE_ROOT/derivatives/<id[:2]>/<id>.jpg` | `derivatives_root` |
+| Thumbnails (256px) | Mac, `data/thumbs/<id[:2]>/<id>.jpg` | `thumbs_root` |
+| SQLite DB | Mac, `data/imgsearch.db` | `db_path` |
+| Inboxes (Syncthing, receive-only) | Mac, `data/inbox/phone`, `data/inbox/camera` | `inboxes` |
+
+The DB stores `derivative_path` relative to `derivatives_root` and `thumb_path` relative to
+`thumbs_root` (migration `002_thumbs_root.sql` moved the older `derivatives/…` and
+`thumbs/…` paths over).
+
+**Search works with the pen drive unplugged.** Vectors and text are in the DB and the
+thumbnails are on the Mac. `imgsearch search` then adds "pen drive not mounted: full-size
+images are unavailable". `imgsearch status` shows whether the drive is mounted.
+
+**Commands that need the drive check it first.** `import`, `update`, `ingest`, `verify` and
+`run <stage>` stop with `pen drive not mounted: /Volumes/<name> (...)` and exit 1 if the
+volume isn't mounted. **Always eject the drive before unplugging it** (Finder, or
+`diskutil eject "/Volumes/<name>"`).
+
+```sh
+uv run imgsearch import    # inbox -> originals_root only
+uv run imgsearch update    # import, then ingest, embed, ocr (no captions)
+uv run imgsearch verify    # check every image's files
+```
+
+**`import`** goes through every image file in each inbox (same rules as ingest: image
+suffixes, hidden files and Syncthing's `.syncthing.*.tmp` skipped):
+
+1. Files changed in the last 60 s are skipped (`skipped (too new)`); the next run takes them.
+2. The file is hashed. If the hash is already registered, it's a duplicate: counted and
+   deleted from the inbox (only if the registered original is in place; otherwise it's a
+   failure and the file stays).
+3. New photos are copied to `originals_root/YYYY/MM/<original name>`, dated by EXIF
+   DateTimeOriginal, else DateTime, else the file's mtime (Syncthing keeps the phone's).
+   A name taken by a different photo gets `-<first 8 hex of the hash>`. Nothing is ever
+   overwritten.
+4. The copy is written to a hidden temp name in the target folder, fsynced, re-hashed and
+   compared, then renamed. Only then is the `images` row inserted, and only after that
+   commit is the inbox file deleted.
+
+A failure on one file is listed with its path and doesn't stop the others; the inbox file
+is kept, and the command exits 1. Running it again with nothing new does nothing. `import`
+is the only code that adds files under `originals_root`.
+
+**`update`** runs `import`, then the `ingest`, `embed` and `ocr` stages through the runner,
+and prints each step's counts. Captions are a separate, slow background job:
+`uv run imgsearch run caption`.
+
+**`verify`** checks every DB row: the original's SHA-256 must equal the image id, and the
+derivative and thumbnail must exist and decode. It prints `verify: N of M images ok` and
+lists each problem.
+
+**Syncthing.** The Mac folders are receive-only, so deleting an imported photo from the
+inbox never touches the phone. Syncthing then lists those files as "locally changed".
+**Don't press "Revert Local Changes"**: that downloads them all again.
+
+**Disk use on exFAT.** The pen drive uses 128 KiB clusters, and macOS writes a hidden
+`._<name>` file (one cluster) next to every file it creates there. Expect each original or
+derivative to cost its size rounded up, plus about 128 KiB.

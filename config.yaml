@@ -1,8 +1,16 @@
 # imgsearch configuration. Relative paths resolve against the folder holding this file.
 
-originals_root: data/originals      # read-only; later an external HDD mount
-derivatives_root: data/derivatives  # derivative JPEGs and 256px thumbnails
-db_path: data/imgsearch.db
+# Storage layout (plan D18). The pen drive holds the originals and the derivatives; the Mac
+# keeps the DB, the thumbnails and the inbox, so search works with the drive unplugged.
+# Eject the drive before unplugging it. IMGSEARCH_STORAGE_ROOT is set in .env (git-ignored;
+# see .env.example), so moving the storage means editing .env only.
+originals_root: "${IMGSEARCH_STORAGE_ROOT}/originals"      # only `imgsearch import` adds files
+derivatives_root: "${IMGSEARCH_STORAGE_ROOT}/derivatives"  # 2048px derivative JPEGs
+thumbs_root: data/thumbs        # 256px thumbnails
+db_path: data/imgsearch.db      # never under /Volumes (rejected by config validation)
+inboxes:                        # `imgsearch import` moves photos from here to originals_root
+  - data/inbox/phone            # Syncthing, receive-only (plan D20)
+  - data/inbox/camera           # Syncthing, receive-only: the phone's camera folder
 
 models:
   embedder:

@@ -39,3 +39,29 @@ def test_duplicate_migration_number_is_an_error(conn: sqlite3.Connection, tmp_pa
     (migrations / "001_b.sql").write_text("SELECT 1;")
     with pytest.raises(ValueError, match="duplicate migration number 1"):
         migrate(conn, migrations)
+
+
+def test_migration_002_moves_paths_to_their_own_roots(tmp_path: Path):
+    # A DB at version 1 with M1-style paths, then the remaining migrations.
+    only_001 = tmp_path / "m"
+    only_001.mkdir()
+    (only_001 / "001_initial.sql").write_text((MIGRATIONS_DIR / "001_initial.sql").read_text())
+    conn = sqlite3.connect(tmp_path / "old.db")
+    conn.row_factory = sqlite3.Row
+    migrate(conn, only_001)
+    with conn:
+        conn.executemany(
+            "INSERT INTO images (id, orig_relpath, derivative_path, thumb_path, created_at)"
+            " VALUES (?, ?, ?, ?, 'now')",
+            [
+                ("ab12", "a.jpg", "derivatives/ab/ab12.jpg", "thumbs/ab/ab12.jpg"),
+                ("cd34", "b.jpg", None, None),  # registered, not yet ingested
+            ],
+        )
+    migrate(conn)
+    rows = conn.execute("SELECT id, derivative_path, thumb_path FROM images ORDER BY id")
+    assert [tuple(r) for r in rows] == [
+        ("ab12", "ab/ab12.jpg", "ab/ab12.jpg"),
+        ("cd34", None, None),
+    ]
+    conn.close()

@@ -55,11 +55,11 @@ def library(conn: sqlite3.Connection, add_image, config: Config) -> sqlite3.Conn
     for image_id in ("dog", "cat", "sign", "lost"):  # no retriever returns "lost"
         add_image(image_id)
     # One image with a real thumbnail file, to check embedding.
-    thumb = config.derivatives_root / "thumbs" / "dog.jpg"
+    thumb = config.thumbs_root / "dog.jpg"
     thumb.parent.mkdir(parents=True)
     thumb.write_bytes(b"\xff\xd8fake-jpeg")
     with conn:
-        conn.execute("UPDATE images SET thumb_path = 'thumbs/dog.jpg' WHERE id = 'dog'")
+        conn.execute("UPDATE images SET thumb_path = 'dog.jpg' WHERE id = 'dog'")
     return conn
 
 
@@ -186,7 +186,7 @@ def test_cli_eval_review_reports_a_bad_query_set(library, config_path: Path):
     assert "unknown image ids: nope" in str(result.exception)
 
 
-def test_cli_eval_compare(tmp_path: Path):
+def test_cli_eval_compare(tmp_path: Path, config_path: Path):
     def run(name: str, recall: float) -> Path:
         overall = {"n": 2, "hit@5": 1.0, "recall@5": recall, "rr": 0.5}
         folder = tmp_path / name
@@ -196,7 +196,7 @@ def test_cli_eval_compare(tmp_path: Path):
         return folder
 
     a, b = run("a", 0.5), run("b", 0.75)
-    result = CliRunner().invoke(app, ["eval-compare", str(a), str(b)])
+    result = CliRunner().invoke(app, ["--config", str(config_path), "eval-compare", str(a), str(b)])
     assert result.exit_code == 0, result.output
     row = next(line for line in result.output.splitlines() if line.startswith("| hybrid+rw"))
     assert "| 0.50 | 0.75 | +0.25 |" in row

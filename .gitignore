@@ -10,6 +10,9 @@ data/
 *.sqlite
 eval/runs/
 
+# Machine-specific paths (see .env.example)
+.env
+
 # Personal Claude Code settings
 .claude/settings.local.json
 
