@@ -41,7 +41,28 @@ The quality drop saves less than expected because 16:9 photos (47 of 130) are no
 
 ## M2: embed
 
-Not measured yet.
+`google/siglip2-base-patch16-384` through transformers on `mps`, float32, one image per
+call. All 130 derivatives (`stages.embed: "1"`), measured with
+`/usr/bin/time -l .venv/bin/imgsearch run embed` on the Mac mini M4, with no other model
+running. The breakdown (load, per image, query) comes from a separate timing script over the
+same 130 derivatives and the same model.
+
+| Measure | Value |
+| --- | --- |
+| Total wall time for 130 images (`run embed`, incl. Python startup and model load) | 14.6 s |
+| Import torch + transformers | 1.7 s |
+| Model load (from the HF cache) | 2.6 s |
+| Seconds per image (decode + preprocess + forward), median / first / max | 0.060 / 0.150 / 0.150 |
+| Image loop, 130 images | 7.8 s |
+| Peak memory: max RSS / peak memory footprint (incl. MPS allocations) | 1.03 GB / 2.35 GB |
+| MPS driver memory with the model loaded | 1.57 GB |
+| Projected for 40k photos | ~40 min |
+| Text query, `retrieve()` with model loaded: first / warm median / warm max | 179 ms / 9 ms / 11 ms |
+| Vector SQL alone (130 rows, top 50) | 0.11 ms |
+| `search-vec` command, whole (startup + load + query) | 4.7 s |
+
+Per-image time includes JPEG decoding of derivatives up to 3.1 MP; the model sees 384×384.
+At query time the embedder (about 1.6 GB on MPS) must be resident next to the rewrite LLM.
 
 ## M3: ocr
 

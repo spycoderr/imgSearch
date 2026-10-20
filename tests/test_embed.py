@@ -105,7 +105,9 @@ def test_rerun_with_new_version_replaces_vectors(ctx: Context):
         "failed": 0,
     }
 
-    bumped = ctx.config.model_copy(update={"stages": {**ctx.config.stages, "embed": "2"}})
+    bumped = ctx.config.model_copy(
+        update={"stages": {**ctx.config.stages, "embed": ctx.config.stages["embed"] + "-bumped"}}
+    )
     stage = EmbedStage(bumped, make_embedder=lambda c: FakeEmbedder(c, fill=2.0))
     assert run_stage(stage, Context(config=bumped, conn=ctx.conn)) == {"done": 2, "failed": 0}
 

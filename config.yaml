@@ -22,7 +22,7 @@ models:
 # Stage versions. Bump one to re-run that stage on every image.
 stages:
   ingest: "2"
-  embed: "1"
+  embed: "2"
   ocr: "1"
   caption: "1"
 

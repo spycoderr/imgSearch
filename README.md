@@ -19,7 +19,7 @@ named next to them.
 | --- | --- | --- |
 | M0 | Scaffold, `config.yaml`, SQLite schema, stage framework, `imgsearch status` | done |
 | M1 | Local folder source and `ingest` stage (hash, EXIF, derivative, thumbnail) | done |
-| M2 | `embed` stage (SigLIP 2) and vector retriever | not started |
+| M2 | `embed` stage (SigLIP 2) and vector retriever | done |
 | M3 | `ocr` stage (Apple Vision) and full-text search | done |
 | M4 | `caption` stage (Qwen-VL via MLX) | not started |
 | M5 | Hybrid search with RRF fusion, `imgsearch search` | not started |
@@ -172,6 +172,29 @@ English stopwords and photo words (`photo`, `picture`, `image`, `pic`, ...) are 
 the rest are joined with `OR`. Matching is on whole words, with no stemming: `pizza` does not
 match `pizzas`. Each result line shows rank, score (`-bm25`, higher is better) and the
 original's path, then the matching text with the matched words in `[ ]`.
+
+### Embeddings and vector search (M2)
+
+```sh
+uv run imgsearch run embed                       # embed every ingested image that needs it
+uv run imgsearch search-vec "a plate of food" [--k 5]
+```
+
+The `embed` stage needs `ingest` to be done. It reads each image's derivative (never the
+original) and embeds it with SigLIP 2 (`models.embedder` in `config.yaml`: `name`, `dim`,
+`device: mps`, `text_max_length: 64`) through transformers. The fixed-resolution checkpoint
+resizes every image to 384×384 without cropping, so panoramas are squashed. Each vector is
+L2-normalized float32 and stored in `embeddings` keyed by `(image_id, model)`, so a different
+model name adds new rows and leaves the old ones alone. Re-running does nothing until
+`stages.embed` changes; a re-run replaces the vectors. The model is loaded once per run and
+freed at the end (including the MPS cache).
+
+`search-vec` embeds the query with the text tower (lowercased, padded/truncated to 64 tokens,
+as SigLIP 2 was trained) and ranks the stored vectors for the configured model by cosine
+distance (sqlite-vec `vec_distance_cosine`). Each line shows rank, score (cosine similarity,
+higher is better) and the original's path. The query is used as given (no rewrite). SigLIP's
+raw similarities are small (about 0.0–0.2 for a good match); only the order matters. The
+command takes about 5 s, mostly loading torch and the model.
 
 ## Evaluation *(planned, M7)*
 
