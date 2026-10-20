@@ -47,8 +47,21 @@ def test_query_words():
 
 
 def test_match_expression_quotes_each_word():
-    assert match_expression("chai AND coffee", "chai") == '"chai" OR "AND" OR "coffee"'
+    assert match_expression("chai NEAR coffee", "chai") == '"chai" OR "NEAR" OR "coffee"'
     assert match_expression("...", "") == ""
+
+
+def test_match_expression_drops_stopwords_and_photo_words():
+    assert match_expression("Show me a Photo of the menu with dosa", "") == '"menu" OR "dosa"'
+    assert match_expression("chai AND coffee", "") == '"chai" OR "coffee"'
+    assert match_expression("the pictures of my images", "pics") == ""
+
+
+def test_stopword_only_query_returns_nothing(library, add_image):
+    add_image("photo")
+    save_caption(library, "photo", "This photo shows the image of a picture", "m")
+    assert ids(library, q("a photo of the picture")) == []
+    assert ids(library, q("photo of the dosa")) == ["menu"]
 
 
 def test_searches_ocr_and_captions(library):

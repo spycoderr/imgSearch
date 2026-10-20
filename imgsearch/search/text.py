@@ -7,6 +7,15 @@ from imgsearch.interfaces import Candidate, ParsedQuery
 
 SIGNAL = "text"
 
+# Dropped from queries (any case): they match almost every caption ("This photo shows a..."),
+# so they would add noise to every fused result.
+STOPWORDS = frozenset(
+    "a an the and or of in on at to for with from by is are was were be been this that these"
+    " those it its as me my our your his her their them we you he she they i there here some"
+    " any all what which who show shows showing find"
+    " photo photos picture pictures image images pic pics".split()
+)
+
 
 def query_words(text: str) -> list[str]:
     """Split text into words: runs of letters, digits and combining marks (so Devanagari
@@ -17,12 +26,13 @@ def query_words(text: str) -> list[str]:
 
 
 def match_expression(*texts: str) -> str:
-    """An FTS5 MATCH string that matches any word of `texts`, or "" if there are none.
+    """An FTS5 MATCH string that matches any word of `texts` except `STOPWORDS`, or "" if
+    no word is left.
 
     Each word is double-quoted, so FTS5 operators typed by the user (AND, NEAR, -, :, *)
     are plain words. Words can't contain `"`, since it is a separator in `query_words`.
     """
-    words = query_words(" ".join(texts))
+    words = [w for w in query_words(" ".join(texts)) if w.lower() not in STOPWORDS]
     return " OR ".join(f'"{w}"' for w in words)
 
 
