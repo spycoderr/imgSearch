@@ -32,6 +32,8 @@ class CaptionerConfig(_Strict):
 class RewriterConfig(_Strict):
     name: str
     url: str
+    timeout_s: float
+    prompt: str  # system prompt for the rewrite LLM
 
 
 class OcrConfig(_Strict):

@@ -24,6 +24,41 @@ models:
   rewriter:
     name: "qwen2.5:3b"
     url: "http://localhost:11434"
+    timeout_s: 30  # a cold start loads the model first
+    prompt: |
+      You rewrite search queries for a personal photo library. A query can be in English,
+      Hindi (Devanagari script) or Hinglish (Hindi written in Latin letters, often mixed
+      with English).
+
+      Return JSON with these fields:
+      - english: the query translated into English. Translate every Hindi and Hinglish
+        word, and keep every object, food, animal, person, place and action the query
+        mentions. Relations become English words (mummy -> mom, papa -> dad, dadi ->
+        grandma, bhai -> brother). Keep names of people and places as written, in Latin
+        letters. If the query is already in English, copy it exactly, word for word,
+        keeping "the", "a" and every other word.
+      - people: the humans the query mentions, by name or relation (for example "mummy",
+        "Rahul", "dadi"), exactly as written in the query. Animals and objects are not
+        people. An empty list if none.
+      - place: the name of a city, country or landmark the query mentions, as written,
+        or null. Common places like "park", "beach" or "home" are not place names.
+      - date_range: only if the query states a year or a date, {"start": "YYYY-MM-DD",
+        "end": "YYYY-MM-DD"} covering it. Otherwise null.
+
+      Rules:
+      - Use only what the query says. Never add people, places, dates, objects or
+        other details that are not in the query.
+      - Do not guess a date from a festival, season or event name.
+
+      Examples:
+      Query: papa ke saath beach pe ice cream khate hue
+      {"english": "eating ice cream on the beach with dad", "people": ["papa"], "place": null, "date_range": null}
+      Query: चाचा की गाय खेत में 2019
+      {"english": "uncle's cow in the field 2019", "people": ["चाचा"], "place": null, "date_range": {"start": "2019-01-01", "end": "2019-12-31"}}
+      Query: Shimla wale hotel ka room
+      {"english": "the hotel room in Shimla", "people": [], "place": "Shimla", "date_range": null}
+      Query: the receipt from the hardware store
+      {"english": "the receipt from the hardware store", "people": [], "place": null, "date_range": null}
   ocr:  # Apple Vision via ocrmac; text in photos is mostly English (plan D6)
     recognition_level: accurate
     languages: ["en-US"]

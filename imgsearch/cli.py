@@ -1,6 +1,9 @@
 """Command-line interface: `uv run imgsearch --help`."""
 
+import dataclasses
+import json
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 from typing import Annotated
@@ -9,6 +12,7 @@ import typer
 
 from imgsearch.config import DEFAULT_CONFIG_PATH, Config, load_config
 from imgsearch.interfaces import Candidate, Context, ParsedQuery
+from imgsearch.models.rewriter import OllamaRewriter
 from imgsearch.search.text import TextRetriever, best_snippet
 from imgsearch.search.vector import VectorRetriever
 from imgsearch.sources.local import LocalFolderSource
@@ -178,3 +182,14 @@ def candidate_lines(conn: sqlite3.Connection, candidates: list[Candidate]) -> li
         row = conn.execute("SELECT orig_relpath FROM images WHERE id = ?", (c.image_id,)).fetchone()
         lines.append(f"{c.rank:>3}  {c.score:.4f}  {row['orig_relpath']}")
     return lines
+
+
+@app.command()
+def rewrite(ctx: typer.Context, query: str) -> None:
+    """Rewrite a query into English JSON with the rewrite LLM (falls back to the query as given)."""
+    config: Config = ctx.obj
+    start = time.perf_counter()
+    parsed = OllamaRewriter(config.models.rewriter).rewrite(query)
+    elapsed = time.perf_counter() - start
+    typer.echo(json.dumps(dataclasses.asdict(parsed), ensure_ascii=False, indent=2))
+    typer.echo(f"took {elapsed:.2f}s")

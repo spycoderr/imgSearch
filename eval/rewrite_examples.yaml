@@ -1,0 +1,25 @@
+# Example queries for the query rewriter (M6). Run them with `uv run imgsearch rewrite "..."`.
+# `lang` is hinglish (Hindi in Latin letters, mixed with English), hindi (Devanagari) or english.
+# `expect` is a hand-written English rewrite for the reviewer to compare against; for English
+# queries the rewrite should return the query unchanged.
+queries:
+  - {lang: hinglish, query: "mummy ke saath Goa wali pizza ki photo", expect: "photo of mom with pizza in Goa"}
+  - {lang: hinglish, query: "papa ka birthday cake", expect: "dad's birthday cake"}
+  - {lang: hinglish, query: "dadi ke haath ka aloo paratha", expect: "aloo paratha made by grandma"}
+  - {lang: hinglish, query: "bhai ki shaadi mein dance", expect: "dancing at brother's wedding"}
+  - {lang: hinglish, query: "Manali trip pe barf mein khelte hue", expect: "playing in the snow on the Manali trip"}
+  - {lang: hinglish, query: "hamara kutta sofa pe soya hua", expect: "our dog sleeping on the sofa"}
+  - {lang: hinglish, query: "bijli ka bill wali photo", expect: "photo of the electricity bill"}
+  - {lang: hinglish, query: "aadhaar card ki photo", expect: "photo of an Aadhaar card"}
+  - {lang: hinglish, query: "Diwali pe diye aur rangoli", expect: "diyas and rangoli at Diwali"}
+  - {lang: hinglish, query: "station pe train ka intezaar karte hue Rahul", expect: "Rahul waiting for the train at the station"}
+  - {lang: hindi, query: "माँ के साथ मंदिर की फोटो", expect: "photo with mom at the temple"}
+  - {lang: hindi, query: "बिल्ली खिड़की पर बैठी है", expect: "cat sitting on the window"}
+  - {lang: hindi, query: "जयपुर में परिवार की तस्वीर", expect: "family photo in Jaipur"}
+  - {lang: hindi, query: "गोलगप्पे खाते हुए बच्चे", expect: "children eating golgappe"}
+  - {lang: hindi, query: "पासपोर्ट का पहला पन्ना", expect: "first page of the passport"}
+  - {lang: english, query: "dog playing in the park", expect: "dog playing in the park"}
+  - {lang: english, query: "restaurant menu with prices", expect: "restaurant menu with prices"}
+  - {lang: english, query: "family dinner at home", expect: "family dinner at home"}
+  - {lang: english, query: "boarding pass for the Delhi flight", expect: "boarding pass for the Delhi flight"}
+  - {lang: english, query: "sunset from the hotel balcony in Goa", expect: "sunset from the hotel balcony in Goa"}
