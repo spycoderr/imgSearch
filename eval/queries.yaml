@@ -1,0 +1,370 @@
+# MVP eval queries (M7). Drafted 2026-10-20 by the supervisor from looking at the photos,
+# not from captions or OCR text. The user will add more. Image ids are SHA-256 hashes;
+# the comment under each query lists the files for review.
+queries:
+  - id: en-pigeons
+    query: "flock of pigeons on a road"
+    language: english
+    type: scene
+    expected_image_ids:
+      - ca9d680506eb2525f8081fee15aec68c38c5f5dd9e6678047c6736ffc0ef898e
+      - 7bb259931d94b700bf8717e431095756d9a397e9e68052caba64c8cb58439a81
+    # files: IMG_20161101_160420.jpg, IMG_20161101_160422.jpg
+    note: ""
+  - id: en-dog-carpet
+    query: "white dog sitting on a carpet"
+    language: english
+    type: object
+    expected_image_ids:
+      - 9095de421d2f67ea8f3387583d7b1147438c4505d925d07637c8bcc8bc678243
+      - ba6d8f68c828ce364913b6657e2dca984bbca3b0fa5d26d90b9a04def69dd510
+    # files: IMG_20180121_130605.jpg, IMG_20180121_130606.jpg
+    note: ""
+  - id: en-beach-boy
+    query: "boy laughing at the beach in an orange t-shirt"
+    language: english
+    type: scene
+    expected_image_ids:
+      - 92500b1d8225d4c53c4a486d588edda79f58957b839c1d1c6d8b5af482ac2e0d
+    # files: IMG_20180612_135438.jpg
+    note: ""
+  - id: en-snail
+    query: "a snail on a wall"
+    language: english
+    type: object
+    expected_image_ids:
+      - 06b85a99f41c74df7e0ca2d88d4e0760952c9ea84642fda493e0294e42d5577a
+    # files: IMG_20180817_155021.jpg
+    note: ""
+  - id: en-spinner
+    query: "fidget spinner in a hand"
+    language: english
+    type: object
+    expected_image_ids:
+      - 53568253f320db944fb93d7ee3eb2cc4c3ae0ef8b30962c26425087fb45e6920
+    # files: IMG_20190204_233343.jpg
+    note: ""
+  - id: en-desk-fan
+    query: "desk with a table fan near a window"
+    language: english
+    type: scene
+    expected_image_ids:
+      - c7948e0138f8b6b11a2f5a8c391fc6c78fce6a5c55200b133c8df22000cd6b3d
+      - ef457a60d161b75e8488489aecc576c1718f24c986357e8457f648e65b3b26e4
+    # files: IMG_20180910_123010.jpg, IMG_20180910_123012.jpg
+    note: ""
+  - id: en-blazers
+    query: "group of boys in maroon school blazers"
+    language: english
+    type: scene
+    expected_image_ids:
+      - 8394b24857f2134fd51de6512398c53786ed60e84d5771d81ab192af0c816609
+      - a6d6bb52d0a11e155a359e0364c150bb92dd3294bdc408f0c7a1fd5f198a998d
+      - ef3600e819d5db224c373b3c767dc710b93514a54248e53e40944717ecc0b6b9
+      - e3be5b1d1be2565e7012da98bf78ca09115b42e97511c1ce49af381789c8610f
+    # files: IMG_20170122_125432.jpg, IMG_20170122_125437.jpg, IMG_20170122_125455.jpg, IMG_20170122_125456.jpg
+    note: ""
+  - id: en-museum
+    query: "museum display case with old artifacts"
+    language: english
+    type: scene
+    expected_image_ids:
+      - a3a0b47f30296a72411dabc55cfb64befcc3961481d928605ffd4e0fd827c17d
+      - 1e6de016a59629db10758e76326fbe0b13f3bcf24a05ee42b0043c3e6decc607
+    # files: IMG_20161101_163036.jpg, IMG_20161101_163121.jpg
+    note: ""
+  - id: en-scale
+    query: "feet on a weighing scale"
+    language: english
+    type: object
+    expected_image_ids:
+      - dc51e224a7fb4b23d7ab2241bcc2022e6a00d757bd8800362f9b15b930e1b9e2
+      - 55fbfebb6b8290966a3532f0579aec3fc5562c3165209b3fb70f46f489c5cb2f
+    # files: IMG_20180306_094930.jpg, IMG_20180306_094935.jpg
+    note: ""
+  - id: en-geo-homework
+    query: "handwritten geography homework with a red heading"
+    language: english
+    type: hard
+    expected_image_ids:
+      - 46d1e2a2817b215e0d5aca14b90186f7aa1f2529248cc8cc4a4c1a1520b50495
+      - e57cf5615697fb4c023e9859b504f5de11f779c5ecf34d27ddd1446a6c99f344
+      - 765fa4b7e3eaf3fea68a35689a4013b4f474faa572f786e5a0cef33c5591ee10
+      - f78e471da6bd0e286b258e650f77ff4971a73579111d1f969f4c307ab48a9cdd
+      - e86bab23fade1604db51e403ac2231d5fb9a2938e15e53d7da73b84b833d9a51
+      - f2cdc40a08ec8ced4866cb72f8d2a2bb1bed8bd4e682936d75036ca15f983289
+      - 5d45ae9116ad0e49279cfbe28bdba4e7522130bba9cf282aeb7da844a093905c
+    # files: IMG_20190423_182500.jpg, IMG_20190423_182503.jpg, IMG_20190423_182505.jpg, IMG_20190423_182511.jpg, IMG_20190423_182514.jpg, IMG_20190423_182515.jpg, IMG_20190423_182519.jpg
+    note: "near-duplicate set: 7 shots of the same page"
+  - id: en-txt-dubai
+    query: "Dubai Bazaar"
+    language: english
+    type: text
+    expected_image_ids:
+      - 0168ca733327029034da918147853e8d904c03de60b43f1a797ac030b39b8c02
+      - 1bc95c1a0407e63dcdc22aa70870e202f778149351694ecfa855e90095a6e5eb
+    # files: IMG_20161101_205600.jpg, IMG_20161101_205603.jpg
+    note: "sign text"
+  - id: en-txt-iit
+    query: "Indian Institute of Technology Delhi"
+    language: english
+    type: text
+    expected_image_ids:
+      - 6ba557d968235261e6fe913913531a7c79dadd4d902f2a1bfca1ece6d759c053
+      - c2b60b782d6dd1c342a8a3c6aacd4a5e90b7247523da89dad4f8eac499d08a23
+      - aa0e42b623eae2dbfb1dacf7aa967055ae4a054e1d6755a8a3a253b1c82fece0
+      - 9d955f7052fe45777b71794303c404290cf2adcd5795f133f488546a8afb036d
+      - 8c111e9ca3c3f9e944bb0ce677cb78b8cbfcef4ca929f66434cd65a9aac6792d
+      - 4bb08e94dbfa3a310b470d704cd55de91c105cca751d0969b33e5d5e282173dc
+    # files: IMG_20170121_163944.jpg, IMG_20170121_163949.jpg, IMG_20170121_164016.jpg, IMG_20170121_164021.jpg, IMG_20170121_164049.jpg, IMG_20170121_164052.jpg
+    note: "sign text; near-duplicates"
+  - id: en-txt-charger
+    query: "Hymn Computer charger label"
+    language: english
+    type: text
+    expected_image_ids:
+      - cbbb852972408fc541880286c9fb4478114261c5372d605a13ef14c58e8ab9d2
+    # files: IMG_20181023_150247.jpg
+    note: "small label text"
+  - id: en-txt-polsci
+    query: "political science assignment questions"
+    language: english
+    type: text
+    expected_image_ids:
+      - 59387d6d353d5bbf140f658d5717056a7e1e2f5fad0c9d563b4fc8a0d950244e
+      - c16dc8e5afbc7bdc2cb9fc9bc11cc10a4723164d4208266fa7bd1b0ad16a3396
+      - 5187a23940d07c79bc43e35ca3fb330a40374d5f59816553bfed888d3913a811
+    # files: IMG_20190506_184159.jpg, IMG_20190506_184207.jpg, IMG_20190506_184210.jpg
+    note: "printed sheets"
+  - id: en-txt-solids
+    query: "visualising solid shapes"
+    language: english
+    type: text
+    expected_image_ids:
+      - 01a426a257b9ffc10f0e59db8be754b0be385fd5e4d884622053c75302ecae80
+    # files: IMG_20190106_190025.jpg
+    note: "textbook heading"
+  - id: en-txt-awesome
+    query: "selfie with the word Awesome"
+    language: english
+    type: text
+    expected_image_ids:
+      - 4930f2ef539bb48e94a08f17538551b0d6ca9fa17518a1213e633571b111a368
+    # files: IMG_20161219_010006.jpg
+    note: "overlay text on a selfie"
+  - id: hi-pigeons
+    query: "kabootar sadak pe"
+    language: hinglish
+    type: scene
+    expected_image_ids:
+      - ca9d680506eb2525f8081fee15aec68c38c5f5dd9e6678047c6736ffc0ef898e
+      - 7bb259931d94b700bf8717e431095756d9a397e9e68052caba64c8cb58439a81
+    # files: IMG_20161101_160420.jpg, IMG_20161101_160422.jpg
+    note: ""
+  - id: hi-dog
+    query: "ghar ka safed kutta"
+    language: hinglish
+    type: object
+    expected_image_ids:
+      - 9095de421d2f67ea8f3387583d7b1147438c4505d925d07637c8bcc8bc678243
+      - ba6d8f68c828ce364913b6657e2dca984bbca3b0fa5d26d90b9a04def69dd510
+      - 365c4a614c2480ab48eb29ade4b96d3a7a80abda89bb03f5978788590cfb3b20
+      - ed2abf65cce027623265c772ecf2ce65d23c669729a276d37e506bd8e6f1f314
+      - 3a1badba634ada5ecdf0b45521aec8cccfd5eadf1ec2eced31e8ce131f507aa6
+    # files: IMG_20180121_130605.jpg, IMG_20180121_130606.jpg, IMG_20180318_092818.jpg, IMG_20180318_092837.jpg, IMG_20190228_183210.jpg
+    note: "every photo of the white dog"
+  - id: hi-waves
+    query: "samundar ki lehrein"
+    language: hinglish
+    type: scene
+    expected_image_ids:
+      - 83aa016b0b58d5ddb26601477c4da0b0f22fc2bbf75d08b0fa4fdfce6c5655a4
+      - 92500b1d8225d4c53c4a486d588edda79f58957b839c1d1c6d8b5af482ac2e0d
+    # files: IMG_20180612_135433.jpg, IMG_20180612_135438.jpg
+    note: ""
+  - id: hi-xmas
+    query: "bachcha christmas tree ke saamne"
+    language: hinglish
+    type: scene
+    expected_image_ids:
+      - 1a0118a87c44fbc8ed456369f343a5d4097946280db177ba9f3a2df3f50ee806
+      - 6894d023607dfd1f3e1c9042d9e2e0b67ce7a3662c0e7c727ce5abcb16298d68
+      - 315f95882f8124583ed08e6257d3b71e09b4389a692e83de3d73514dc584c851
+    # files: IMG_20161225_212018.jpg, IMG_20161225_212021.jpg, IMG_20161225_213056.jpg
+    note: "#34 has a stylised cone tree; not counted"
+  - id: hi-green-dupatta
+    query: "hare dupatte mein aurat mahal ke garden ke saamne"
+    language: hinglish
+    type: scene
+    expected_image_ids:
+      - c8e66256ee874453bf659c804631b33be04098a691f6569f8efdc725eb5b1927
+      - 4a27442bed565fd6c74f9804bfc4a3632b4d3d30c68c0e70008831da2213b7d4
+      - 673d1aab0eae8700ef73f3d8c6a94dd73156c004561d45d3cd41da405071748e
+    # files: IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg
+    note: ""
+  - id: hi-bedroom
+    query: "bed wala kamra"
+    language: hinglish
+    type: scene
+    expected_image_ids:
+      - cf1e09aa76beabf43a5e3a6ba906211856d31d55fbede4ead6816269451208b0
+      - ea727931eaaaa4a4353e387ff9022748327f3b2dfc9a4860012ab493979beb64
+    # files: IMG_20180910_123101.jpg, IMG_20180910_123102.jpg
+    note: ""
+  - id: hi-candy-list
+    query: "chocolate ki list"
+    language: hinglish
+    type: text
+    expected_image_ids:
+      - e8d0bc2312e30e7978849f8803354fbe3f327e766bf2ce96fe942948159a73e4
+      - 78cbaf50243e88ff188e07479caf557796ca14738013092d1d24138df56e7747
+      - 0282be3562afa786d9aa20b84b9a17770be4505ac027828afcb72d5c18881df6
+      - ddbcb696abd7145ffda2aa1701fa0345bcf18f0ca15447da580b3bbe36f9e6e2
+    # files: IMG_20190301_174812.jpg, IMG_20190301_174818.jpg, IMG_20190301_174821.jpg, IMG_20190301_174825.jpg
+    note: "handwritten list: Dairy Milk, Skittles, Kit Kat"
+  - id: hi-thali
+    query: "Rajasthani khana thaali mein"
+    language: hinglish
+    type: object
+    expected_image_ids:
+      - 515bdfcbe8f58243788d55eaa370b6681999d886bcf152d6681a0b34152054d4
+    # files: IMG_20161102_202751.jpg
+    note: ""
+  - id: hi-laptop
+    query: "laptop ki photo"
+    language: hinglish
+    type: object
+    expected_image_ids:
+      - bca47db0ffe502f1b1590b7f6b8605d7a3e8b86c26a4b8e2cbc8cdc82b1221aa
+    # files: IMG_20181217_174058.jpg
+    note: ""
+  - id: hi-iit-boy
+    query: "IIT Delhi ke saamne khada ladka"
+    language: hinglish
+    type: place
+    expected_image_ids:
+      - aa0e42b623eae2dbfb1dacf7aa967055ae4a054e1d6755a8a3a253b1c82fece0
+      - 9d955f7052fe45777b71794303c404290cf2adcd5795f133f488546a8afb036d
+    # files: IMG_20170121_164016.jpg, IMG_20170121_164021.jpg
+    note: "the man in #49-50 is not a 'ladka'"
+  - id: hi-scooty
+    query: "scooty pe do log sadak pe"
+    language: hinglish
+    type: scene
+    expected_image_ids:
+      - 7ee3b177e2022733e77506f375dab2ee9f55955c32edd91d274b96fa84ab2f48
+      - 402562890c981c373fc2608d78fca141c63071af22d1095cb33d52657ea86fa4
+    # files: IMG_20190219_095436.jpg, IMG_20190219_095438.jpg
+    note: ""
+  - id: hi-kal-shaadi
+    query: "kal wali shaadi ki photos"
+    language: hinglish
+    type: hard
+    expected_image_ids:
+      - aa8e7421468c070b1801f3e90c69d049e0cbf800313d6c0bc87246127ce7d18f
+      - 3a3f92a0667a92660205c80977c5f23cb8ee2346f8f4879ae70c5e49da993d26
+      - 7f4bc5df8d23395fdeadfc9b9794ce2629ba4a587a4e4fb285c35831ad09ae0c
+    # files: IMG_20181119_222926.jpg, IMG_20181119_222928.jpg, IMG_20181119_223058.jpg
+    note: "relative date; the evening lawn party is assumed to be the wedding"
+  - id: dv-pigeons
+    query: "कबूतरों का झुंड"
+    language: hindi
+    type: scene
+    expected_image_ids:
+      - ca9d680506eb2525f8081fee15aec68c38c5f5dd9e6678047c6736ffc0ef898e
+      - 7bb259931d94b700bf8717e431095756d9a397e9e68052caba64c8cb58439a81
+    # files: IMG_20161101_160420.jpg, IMG_20161101_160422.jpg
+    note: ""
+  - id: dv-dog
+    query: "सफेद कुत्ता"
+    language: hindi
+    type: object
+    expected_image_ids:
+      - 9095de421d2f67ea8f3387583d7b1147438c4505d925d07637c8bcc8bc678243
+      - ba6d8f68c828ce364913b6657e2dca984bbca3b0fa5d26d90b9a04def69dd510
+      - 365c4a614c2480ab48eb29ade4b96d3a7a80abda89bb03f5978788590cfb3b20
+      - ed2abf65cce027623265c772ecf2ce65d23c669729a276d37e506bd8e6f1f314
+      - 3a1badba634ada5ecdf0b45521aec8cccfd5eadf1ec2eced31e8ce131f507aa6
+    # files: IMG_20180121_130605.jpg, IMG_20180121_130606.jpg, IMG_20180318_092818.jpg, IMG_20180318_092837.jpg, IMG_20190228_183210.jpg
+    note: ""
+  - id: dv-beach-boy
+    query: "समुद्र किनारे लड़का"
+    language: hindi
+    type: scene
+    expected_image_ids:
+      - 92500b1d8225d4c53c4a486d588edda79f58957b839c1d1c6d8b5af482ac2e0d
+    # files: IMG_20180612_135438.jpg
+    note: ""
+  - id: dv-jaipur-fort
+    query: "जयपुर का किला"
+    language: hindi
+    type: hard
+    expected_image_ids:
+      - ee98835250aca01f4d146b28468aecf223bc1020515925d829b97724787eea2c
+      - b324b13c19cfebf553e0186ab89fc486ec28b9f81cd2e9e373e44998c087e33d
+      - f433dababcbf48ffdb8713042b36ce6a06d6199ba95aeb86156523626d500482
+      - 16c9ee52362560ec2461e8080a2ee9c8893e2f2342a4a972e22d2a1a392aa536
+      - 686906ae2d96c03390e9424a89f4474e6fae2ff91413b04dae83189ad1e084f1
+      - c8e66256ee874453bf659c804631b33be04098a691f6569f8efdc725eb5b1927
+      - 4a27442bed565fd6c74f9804bfc4a3632b4d3d30c68c0e70008831da2213b7d4
+      - 673d1aab0eae8700ef73f3d8c6a94dd73156c004561d45d3cd41da405071748e
+      - 8147aa18180cd95c29eb7c166480a7d3a8c7a9f387c8fb104a8899d6e38001bb
+      - 347f9240ef216f36c0f55975a22fe6df5c12f59d11423f37653e4af20593fc67
+      - b30dd1bb7d4676792ad1267d943a6663cb2f2bb34dfdd7fc8bc4cdc62546dafe
+    # files: IMG_20161102_104529.jpg, IMG_20161102_104614.jpg, IMG_20161102_104629.jpg, IMG_20161102_112321.jpg, IMG_20161102_112328.jpg, IMG_20161102_115631.jpg, IMG_20161102_115635.jpg, IMG_20161102_115641.jpg, IMG_20161102_121143.jpg, IMG_20161102_121735.jpg, IMG_20161102_121947.jpg
+    note: "place name; M6 rewrites जयपुर as Jodhpur. Confirm which of #13-23 are the fort"
+  - id: dv-xmas
+    query: "क्रिसमस ट्री"
+    language: hindi
+    type: scene
+    expected_image_ids:
+      - 1a0118a87c44fbc8ed456369f343a5d4097946280db177ba9f3a2df3f50ee806
+      - 6894d023607dfd1f3e1c9042d9e2e0b67ce7a3662c0e7c727ce5abcb16298d68
+      - 315f95882f8124583ed08e6257d3b71e09b4389a692e83de3d73514dc584c851
+    # files: IMG_20161225_212018.jpg, IMG_20161225_212021.jpg, IMG_20161225_213056.jpg
+    note: ""
+  - id: dv-hills
+    query: "पहाड़ों का दृश्य"
+    language: hindi
+    type: scene
+    expected_image_ids:
+      - f162947cd673c8f08df37698eb07b06ae9517c9ed896f0d97d567c668ec56191
+      - b08f19666a0760fcd8bd03cd9ab3e2eb54b6d27c42e7623961dfc7c6e73845fe
+      - eef4eb6ae00cd317134d81295f625d31a866d4d1e7f2a98bab7a76c5374d05f7
+    # files: IMG_20171115_125545.jpg, IMG_20171115_125547.jpg, IMG_20171115_132546.jpg
+    note: "#59 is the 6656x544 panorama"
+  - id: dv-handwriting
+    query: "हाथ से लिखे नोट्स"
+    language: hindi
+    type: hard
+    expected_image_ids:
+      - 12028f5bcfcb8c9e833a6879911ad0314401958385e5a59c49f343a9f67be30e
+      - 1b36a2fab04049a4291ab3a8a9bab8bd06b59f2c18d4d562ca255e7fc94acca3
+      - a4a8afd8020bc89c9959f01843e76444b213d6fbc75c43375a251d447aed9531
+      - 24727405181adf4db2847071d281e90926b1ea06d88790e741bc5db489508202
+      - a4fd3fbc19f8fd91e65dfa451c8ddb1b9f8ecea52fc78dd3b42f207f4ff606f6
+      - 017557cca56fd5cdb8ae1693675b604aa99b843063d6c1de869fcb04cb0e1c28
+      - c48cb7619b4fca6a0cc691f8f7bb16b221e29c16c96c12c6b6c3cf3eefee0493
+      - d440b21f1b8317504e0dcb6b80dc159ca372ff7bdf16709c4b263a9ebaf0718a
+      - ad0b029913931777597c95da4530731a52e2fb41a51d18243ce21d31b4fac187
+      - a287efec125baa77ae864df178a5015c6dadf364e57ccc3154c4126170db435e
+      - 77243c0f627103fbe0e47feb2c5ea1361dbf2d4eb1ffe89c66f9016f48c13fcb
+      - 4fb9fa9ee8a9f7230a8d899f72d8018086529b2957ff8bb7204887965237a2e1
+      - ed9e8994db7d9e06d8c6ffcc02af4275722ed18d754f5bf9c355f5104878d860
+      - 46d1e2a2817b215e0d5aca14b90186f7aa1f2529248cc8cc4a4c1a1520b50495
+      - e57cf5615697fb4c023e9859b504f5de11f779c5ecf34d27ddd1446a6c99f344
+      - 765fa4b7e3eaf3fea68a35689a4013b4f474faa572f786e5a0cef33c5591ee10
+      - f78e471da6bd0e286b258e650f77ff4971a73579111d1f969f4c307ab48a9cdd
+      - e86bab23fade1604db51e403ac2231d5fb9a2938e15e53d7da73b84b833d9a51
+      - f2cdc40a08ec8ced4866cb72f8d2a2bb1bed8bd4e682936d75036ca15f983289
+      - 5d45ae9116ad0e49279cfbe28bdba4e7522130bba9cf282aeb7da844a093905c
+    # files: IMG_20170109_104923.jpg, IMG_20170109_104931.jpg, IMG_20170109_104948.jpg, IMG_20170109_104956.jpg, IMG_20170109_105028.jpg, IMG_20180919_165440.jpg, IMG_20190423_151148.jpg, IMG_20190423_151201.jpg, IMG_20190423_154309.jpg, IMG_20190423_154317.jpg, IMG_20190423_154318.jpg, IMG_20190423_154323.jpg, IMG_20190423_154325.jpg, IMG_20190423_182500.jpg, IMG_20190423_182503.jpg, IMG_20190423_182505.jpg, IMG_20190423_182511.jpg, IMG_20190423_182514.jpg, IMG_20190423_182515.jpg, IMG_20190423_182519.jpg
+    note: "handwriting; OCR reads it poorly"
+  - id: dv-hindi-page
+    query: "हिंदी में छपा पन्ना"
+    language: hindi
+    type: hard
+    expected_image_ids:
+      - 7d32967d1fec89faf72844347585880bc59a3ea891e46a1a1e505eed9df734e5
+    # files: IMG_20181217_165916.jpg
+    note: "printed Devanagari; OCR is English-only"
