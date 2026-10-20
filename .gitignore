@@ -12,3 +12,6 @@ eval/runs/
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Git worktrees for parallel tasks
+.worktrees/
