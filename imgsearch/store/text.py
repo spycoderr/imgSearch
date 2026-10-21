@@ -1,4 +1,4 @@
-"""Write OCR text, captions and file-name words, keeping the text_fts index in sync.
+"""Write OCR text, captions, file-name words and place names, keeping the text_fts index in sync.
 
 Stages call these instead of touching text_fts directly.
 """
@@ -28,6 +28,17 @@ def save_filename_text(conn: sqlite3.Connection, image_id: str, text: str) -> No
     folder. There is no base table; the words are rebuilt from `images`. Commits."""
     with conn:
         _replace_fts(conn, image_id, "filename", text)
+
+
+def save_place_text(conn: sqlite3.Connection, image_id: str, text: str) -> None:
+    """Replace an image's `place` FTS row: the names of where it was taken (P1.8). The base
+    table is `photo_places`. Doesn't commit: `store.places.save_place` does."""
+    _replace_fts(conn, image_id, "place", text)
+
+
+def delete_place_text(conn: sqlite3.Connection, image_id: str) -> None:
+    """Remove an image's `place` FTS row. Doesn't commit."""
+    conn.execute("DELETE FROM text_fts WHERE image_id = ? AND kind = 'place'", (image_id,))
 
 
 def _replace_fts(conn: sqlite3.Connection, image_id: str, kind: str, text: str) -> None:

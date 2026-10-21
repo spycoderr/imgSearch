@@ -10,6 +10,8 @@ from imgsearch.interfaces import ParsedQuery, QueryRewriter, Result, Retriever
 from imgsearch.models.rewriter import OllamaRewriter
 from imgsearch.search import text, vector
 from imgsearch.search.fusion import Fused, rrf_fuse
+from imgsearch.store.dates import SEARCH_DATE_SQL
+from imgsearch.store.places import place_labels, resolve_place
 
 SIGNALS = (vector.SIGNAL, text.SIGNAL)
 
@@ -35,6 +37,12 @@ class SearchResponse:
     date_filter: tuple[str, str] | None = None
     # True when the range matched nothing and the results are from all dates instead.
     date_fallback: bool = False
+    # The place the results were filtered to (`query.place_filter.label`), or None when the
+    # query names no place in the library, the filter was off, or nothing matched there.
+    place_filter: str | None = None
+    # True when the place (with the dates, if any) matched nothing and the results are from
+    # all places instead.
+    place_fallback: bool = False
 
 
 class Searcher:
@@ -63,13 +71,17 @@ class Searcher:
         rewrite: bool = True,
         signals: Collection[str] | None = None,
         date_filter: bool = True,
+        place_filter: bool = True,
     ) -> SearchResponse:
         """Top `k` (default `search.top_k`) for `query`. `rewrite` and `signals` are the
         switches for ablations; `signals=None` uses every retriever this searcher has.
 
         When the rewrite finds a date range, every retriever keeps only images dated in
-        it. If none are, the search runs again without the range and says so
-        (`date_fallback`). `date_filter=False` ignores the range."""
+        it. When its `place` names a place some photo was taken at (`resolve_place`), they
+        keep only photos from there or whose text names it; a place that resolves to nothing
+        ("park", "home") is ignored. Both filters must hold. If nothing survives, the place
+        is dropped first (`place_fallback`), then the dates (`date_fallback`), and the search
+        runs again. `date_filter=False` and `place_filter=False` ignore them."""
         names = tuple(self.retrievers) if signals is None else tuple(signals)
         unknown = [s for s in names if s not in self.retrievers]
         if not names or unknown:
@@ -79,6 +91,7 @@ class Searcher:
 
         start = time.perf_counter()
         q = self.rewriter.rewrite(query) if rewrite else ParsedQuery(english=query, original=query)
+        q = replace(q, place_filter=resolve_place(self.conn, q.place))
         rewritten = time.perf_counter()
 
         k = k or self.config.top_k
@@ -86,13 +99,20 @@ class Searcher:
         # (the chat bot's `more`), so a search can return k results.
         depth = max(self.config.per_retriever_k, k)
         date_range = q.date_range if date_filter else None
-        fused = self._fuse(replace(q, date_range=date_range), names, depth)
-        fallback = not fused and date_range is not None
-        if fallback:
+        place = q.place_filter if place_filter else None
+        fused = self._fuse(replace(q, date_range=date_range, place_filter=place), names, depth)
+        place_fallback = not fused and place is not None
+        if place_fallback:
+            place = None
+            fused = self._fuse(replace(q, date_range=date_range, place_filter=None), names, depth)
+        date_fallback = not fused and date_range is not None
+        if date_fallback:
             date_range = None
-            fused = self._fuse(replace(q, date_range=None), names, depth)
+            fused = self._fuse(replace(q, date_range=None, place_filter=None), names, depth)
         fused = fused[:k]
-        rows = image_rows(self.conn, [f.image_id for f in fused])
+        ids = [f.image_id for f in fused]
+        rows = image_rows(self.conn, ids)
+        places = place_labels(self.conn, ids)
         results = [
             Result(
                 image_id=f.image_id,
@@ -102,6 +122,8 @@ class Searcher:
                 caption=rows[f.image_id]["caption"],
                 score=f.score,
                 signals=f.signals,
+                date=rows[f.image_id]["date"],
+                place=places.get(f.image_id),
             )
             for f in fused
         ]
@@ -113,7 +135,9 @@ class Searcher:
             results=results,
             timings=Timings(rewritten - start, end - rewritten, end - start),
             date_filter=date_range,
-            date_fallback=fallback,
+            date_fallback=date_fallback,
+            place_filter=place.label if place else None,
+            place_fallback=place_fallback,
         )
 
     def _fuse(self, q: ParsedQuery, names: tuple[str, ...], depth: int) -> list[Fused]:
@@ -122,10 +146,11 @@ class Searcher:
 
 
 def image_rows(conn: sqlite3.Connection, image_ids: list[str]) -> dict[str, sqlite3.Row]:
-    """Paths and caption for each image id."""
+    """Paths, caption and search date for each image id."""
     marks = ",".join("?" * len(image_ids))
     rows = conn.execute(
-        "SELECT i.id, i.orig_relpath, i.derivative_path, i.thumb_path, c.text AS caption"
+        "SELECT i.id, i.orig_relpath, i.derivative_path, i.thumb_path, c.text AS caption,"
+        f" {SEARCH_DATE_SQL} AS date"
         f" FROM images i LEFT JOIN captions c ON c.image_id = i.id WHERE i.id IN ({marks})",
         image_ids,
     )

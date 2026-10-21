@@ -111,6 +111,7 @@ stages:
   ocr: "1"
   caption: "1"
   filename: "1"
+  places: "1"
 
 search:
   top_k: 5
@@ -121,6 +122,28 @@ search:
   default_signals: [vector]
   # RRF weight per signal: score = sum of weight / (rrf_k + rank). 1.0 = plain RRF.
   signal_weights: {vector: 1.0, text: 1.0}
+
+# Places from GPS (P1.8, plan D22): offline reverse geocoding with GeoNames (CC BY 4.0).
+# `imgsearch geo download` fetches the files once into `dir` (git-ignored); nothing is looked
+# up online at search time. Feature codes: https://www.geonames.org/export/codes.html
+places:
+  dir: data/geo
+  base_url: https://download.geonames.org/export/dump
+  countries: [IN]          # one <CC>.zip per country the library's GPS falls in
+  # A photo's city: the nearest populated place (class P) with one of these codes and at
+  # least this population, within city_max_km. Its district and state come from the nearest
+  # populated place of any size (villages included), which follows the borders more closely.
+  city_codes: [PPL, PPLA, PPLA2, PPLA3, PPLA4, PPLC, PPLG]
+  city_min_population: 1000
+  city_max_km: 30
+  # The nearest landmark with one of these codes within landmark_max_km, if any.
+  landmark_codes: [
+    MNMT, HSTS, FT, PAL, CSTL, RUIN, TMB, GATE, TOWR, OBPT,  # monuments, forts, palaces
+    MUS, TMPL, MSQE, CH, SHRN,                               # museums, places of worship
+    PRK, GDN, ZOO, AMUS, MKT, MALL, STDM,                    # parks, gardens, markets
+    BCH, BCHS, LK, FLLS,                                     # beaches, lakes, waterfalls
+  ]
+  landmark_max_km: 1.0
 
 eval:
   queries: eval/queries.yaml   # the labelled query set

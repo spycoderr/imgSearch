@@ -56,11 +56,11 @@ class CachedRewriter:
 
 
 def eval_searcher(config: Config, conn: sqlite3.Connection) -> tuple[Searcher, CachedRewriter]:
-    """The real models, loaded once, plus a text retriever without captions (OCR and file
-    names) for the no-captions run.
+    """The real models, loaded once, plus a text retriever without captions (OCR, file names
+    and places) for the no-captions run.
     Also returns the rewrite cache, which records each rewrite's time and result."""
     base = open_searcher(config, conn, signals=SIGNALS)  # all of them, not the search default
-    no_captions = TextRetriever(conn, kinds=("ocr", "filename"))
+    no_captions = TextRetriever(conn, kinds=("ocr", "filename", "place"))
     retrievers = {**base.retrievers, NO_CAPTIONS: no_captions}
     rewriter = CachedRewriter(base.rewriter)
     return Searcher(conn, config.search, rewriter, retrievers), rewriter
@@ -72,15 +72,22 @@ def run_eval(
     ablations: tuple[Ablation, ...] = ABLATIONS,
     progress: Callable[[EvalQuery, dict[str, dict]], None] | None = None,
     date_filter: bool = True,
+    place_filter: bool = True,
 ) -> list[dict]:
     """One record per (query, ablation): what was searched, the top 5 and its metrics.
-    `date_filter=False` ignores dates found in the queries (to measure the filter)."""
+    `date_filter=False` and `place_filter=False` ignore dates and places found in the
+    queries (to measure the filters)."""
     records = []
     for q in queries:
         done: dict[str, dict] = {}
         for ab in ablations:
             response = searcher.search(
-                q.query, k=5, rewrite=ab.rewrite, signals=ab.signals, date_filter=date_filter
+                q.query,
+                k=5,
+                rewrite=ab.rewrite,
+                signals=ab.signals,
+                date_filter=date_filter,
+                place_filter=place_filter,
             )
             ranked = [r.image_id for r in response.results]
             done[ab.name] = {
@@ -96,6 +103,12 @@ def run_eval(
                 "date_range": response.query.date_range,  # as parsed by the rewrite
                 "date_filter": response.date_filter,  # the range the results were limited to
                 "date_fallback": response.date_fallback,
+                "place": response.query.place,  # as parsed by the rewrite
+                "place_resolved": (
+                    response.query.place_filter.label if response.query.place_filter else None
+                ),
+                "place_filter": response.place_filter,  # the place the results were limited to
+                "place_fallback": response.place_fallback,
                 "results": [
                     {
                         "image_id": r.image_id,

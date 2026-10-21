@@ -44,8 +44,18 @@ class ImageRecord:
 
 
 @dataclass(frozen=True)
+class PlaceFilter:
+    """The places in the library a query's `place` resolved to (P1.8)."""
+
+    label: str  # the place as the query named it, e.g. "Jaipur"
+    geonameids: tuple[int, ...]  # GeoNames ids of the matching places (any level)
+    names: tuple[str, ...]  # names searched in OCR text, captions and file names
+
+
+@dataclass(frozen=True)
 class ParsedQuery:
-    """Output of the query rewriter. MVP search uses only `english` and `original`."""
+    """Output of the query rewriter, plus the place filter `Searcher` resolves from `place`.
+    Retrievers must honour `date_range` and `place_filter` (P1.7, P1.8)."""
 
     english: str
     original: str
@@ -53,6 +63,7 @@ class ParsedQuery:
     date_range: tuple[str, str] | None = None  # ISO 8601 start, end
     place: str | None = None
     rewrite_error: str | None = None  # set when the rewrite failed and the query is used as given
+    place_filter: PlaceFilter | None = None  # set by Searcher, not by the rewriter
 
 
 @dataclass(frozen=True)
@@ -76,6 +87,8 @@ class Result:
     caption: str | None
     score: float  # fused RRF score, higher is better
     signals: dict[str, tuple[int, float]]  # signal -> (rank, score) in that retriever
+    date: str | None = None  # search date: EXIF taken_at, else the file's mtime (P1.7)
+    place: str | None = None  # where it was taken, e.g. "Amer, Jaipur, Rajasthan" (P1.8)
 
 
 @dataclass(frozen=True)

@@ -22,12 +22,17 @@ from imgsearch.stages.embed import EmbedStage
 from imgsearch.stages.filename import FilenameStage
 from imgsearch.stages.ingest import IngestStage, register_new
 from imgsearch.stages.ocr import OcrStage
+from imgsearch.stages.places import PlacesStage
 from imgsearch.stages.runner import run_stage
 from imgsearch.stages.update import UPDATE_STAGES, update
 from imgsearch.store.db import connect
+from imgsearch.store.places import place_counts
 from imgsearch.store.roots import is_available
 from imgsearch.store.status import status_counts
 from imgsearch.store.verify import verify
+
+# Stages that read only the DB (and the GeoNames files), so they run without the pen drive.
+DB_ONLY_STAGES = ("filename", "places")
 
 STATES = ["done", "failed", "running", "pending", "outdated"]
 
@@ -38,6 +43,7 @@ STAGES = {
     "embed": EmbedStage,
     "caption": CaptionStage,
     "filename": FilenameStage,
+    "places": PlacesStage,
 }
 
 
@@ -48,6 +54,7 @@ def status(ctx: typer.Context) -> None:
     total = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
     counts = status_counts(conn, config.stages)
     cloud = cloud_status_lines(config, conn)
+    gps, placed, landmarks = place_counts(conn)
     conn.close()
 
     typer.echo(f"db: {config.db_path}")
@@ -60,6 +67,9 @@ def status(ctx: typer.Context) -> None:
         not_run = total - sum(by_state.values())
         cells = [by_state.get(s, 0) for s in STATES] + [not_run]
         typer.echo(f"{stage:<10}" + "".join(f"{n:>9}" for n in cells))
+    typer.echo(
+        f"gps: {gps} of {total} photos; places resolved: {placed} ({landmarks} with a landmark)"
+    )
     drive = "mounted" if is_available(config.originals_root) else "NOT MOUNTED"
     typer.echo(f"pen drive: {drive} (originals: {config.originals_root})")
     for line in cloud:
@@ -100,7 +110,8 @@ def run_command(
             f"unknown stage {stage_name!r}; choose from: {', '.join(STAGES)}",
             param_hint="STAGE",
         )
-    need_drive(config, "derivatives_root")  # every stage reads the derivatives
+    if stage_name not in DB_ONLY_STAGES:
+        need_drive(config, "derivatives_root")  # the others read the derivatives
     stage = STAGES[stage_name](config)
     with closing(connect(config)) as conn:
         counts = run_stage(stage, Context(config=config, conn=conn))
@@ -137,8 +148,8 @@ def import_command(ctx: typer.Context) -> None:
 
 
 def update_command(ctx: typer.Context) -> None:
-    """Import the inboxes, upload new originals to S3, run ingest, embed and ocr, then
-    upload the DB copy.
+    """Import the inboxes, upload new originals to S3, run ingest, embed, ocr, filename and
+    places, then upload the DB copy.
 
     Indexing still runs if the upload can't (offline). Captions are not run.
     """

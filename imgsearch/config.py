@@ -113,6 +113,26 @@ class SearchConfig(_Strict):
         return value
 
 
+class PlacesConfig(_Strict):
+    """Offline reverse geocoding with GeoNames (P1.8, D22)."""
+
+    dir: Path  # where `imgsearch geo download` puts the files (git-ignored)
+    base_url: str  # GeoNames dump folder
+    countries: list[str]  # ISO codes; one <CC>.zip each
+    city_codes: list[str]  # class P feature codes a photo's city may have
+    city_min_population: int
+    city_max_km: float  # no city (nor district/state) beyond this
+    landmark_codes: list[str]  # feature codes of landmarks (monuments, forts, parks, ...)
+    landmark_max_km: float
+
+    @field_validator("countries")
+    @classmethod
+    def _country_codes(cls, value: list[str]) -> list[str]:
+        if not value or not all(re.fullmatch(r"[A-Z]{2}", c) for c in value):
+            raise ValueError("countries must be two-letter ISO codes such as IN")
+        return value
+
+
 class EvalPaths(_Strict):
     queries: Path
     runs_dir: Path
@@ -174,6 +194,7 @@ class Config(_Strict):
     models: ModelsConfig
     stages: dict[str, str]  # stage name -> version
     search: SearchConfig
+    places: PlacesConfig
     eval: EvalPaths
     s3: S3Config
     storage: StorageConfig
@@ -211,6 +232,8 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_F
             data[key] = resolve(data[key])
     if isinstance(data.get("inboxes"), list):
         data["inboxes"] = [resolve(p) for p in data["inboxes"]]
+    if "dir" in data.get("places", {}):
+        data["places"]["dir"] = resolve(data["places"]["dir"])
     for key in ("queries", "runs_dir"):
         if key in data.get("eval", {}):
             data["eval"][key] = resolve(data["eval"][key])

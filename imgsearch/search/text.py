@@ -1,13 +1,14 @@
-"""Full-text retriever over `text_fts` (OCR text, captions, file-name words), ranked by bm25."""
+"""Full-text retriever over `text_fts` (OCR text, captions, file-name words, place names),
+ranked by bm25."""
 
 import sqlite3
-import unicodedata
 
 from imgsearch.interfaces import Candidate, ParsedQuery
-from imgsearch.store.dates import date_filter_sql
+from imgsearch.search.filters import filter_sql
+from imgsearch.search.words import query_words
 
 SIGNAL = "text"
-KINDS = ("ocr", "caption", "filename")  # the `kind` values in text_fts
+KINDS = ("ocr", "caption", "filename", "place")  # the `kind` values in text_fts
 
 # Dropped from queries (any case): they match almost every caption ("This photo shows a..."),
 # so they would add noise to every fused result.
@@ -17,14 +18,6 @@ STOPWORDS = frozenset(
     " any all what which who show shows showing find"
     " photo photos picture pictures image images pic pics".split()
 )
-
-
-def query_words(text: str) -> list[str]:
-    """Split text into words: runs of letters, digits and combining marks (so Devanagari
-    vowel signs stay inside their word). Everything else separates words. Duplicates are
-    dropped, keeping first-seen order."""
-    kept = "".join(c if unicodedata.category(c)[0] in "LNM" else " " for c in text)
-    return list(dict.fromkeys(kept.split()))
 
 
 def match_expression(*texts: str) -> str:
@@ -43,7 +36,7 @@ class TextRetriever:
 
     One query covers the words of both `q.english` and `q.original`. Each image appears
     once, at its best-scoring row. `Candidate.score` is `-bm25`, so higher is better.
-    When `q.date_range` is set, only images dated within it are returned.
+    When `q.date_range` or `q.place_filter` is set, only images within them are returned.
     `kinds` limits the rows searched, e.g. `("ocr", "filename")` to leave captions out
     (the M7 ablation); the default searches every kind.
     """
@@ -61,7 +54,7 @@ class TextRetriever:
             return []
         # bm25() can't be used under GROUP BY, so keep each image's first (best) row here.
         marks = ",".join("?" * len(self.kinds))
-        in_range, range_params = date_filter_sql(q.date_range)
+        in_range, range_params = filter_sql(q)
         rows = self.conn.execute(
             "SELECT image_id, bm25(text_fts) FROM text_fts WHERE text_fts MATCH ?"
             f" AND kind IN ({marks}){in_range} ORDER BY bm25(text_fts), image_id",

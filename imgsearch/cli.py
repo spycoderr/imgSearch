@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from imgsearch.commands import backfill, bot, cloud, evaluate, index, query
+from imgsearch.commands import backfill, bot, cloud, evaluate, geo, index, query
 from imgsearch.commands.index import STAGES
 from imgsearch.config import DEFAULT_CONFIG_PATH, load_config
 
@@ -47,3 +47,4 @@ app.command("bot")(bot.bot_command)
 app.add_typer(bot.telegram_app, name="telegram")
 app.add_typer(cloud.key_app, name="s3-key")
 app.add_typer(backfill.backfill_app, name="backfill")
+app.add_typer(geo.geo_app, name="geo")

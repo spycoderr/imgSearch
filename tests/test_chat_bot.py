@@ -187,6 +187,27 @@ def test_no_date_note_when_the_dates_matched(config, chat_library, make_searcher
     assert [c.split(" · ")[1] for _, c in messenger.albums()[0]] == ["2024-05-02", "2024-05-03"]
 
 
+def test_place_fallback_says_no_photos_matched_the_place(
+    config, chat_library, make_searcher, messenger
+):
+    """P1.8: img01 was taken in Goa, but the retriever finds nothing there."""
+    with chat_library:
+        chat_library.execute("INSERT INTO places VALUES (1271157, 'Goa')")
+        chat_library.execute("INSERT INTO place_names VALUES ('goa', 1271157)")
+        chat_library.execute(
+            "INSERT INTO photo_places (image_id, state_id) VALUES ('img01', 1271157)"
+        )
+    searcher = make_searcher(chat_library)
+    searcher.rewriter.rewrite = lambda q: ParsedQuery("dogs in goa", q, place="Goa")
+    anywhere = searcher.retrievers["vector"].retrieve
+    searcher.retrievers["vector"].retrieve = lambda q, k: [] if q.place_filter else anywhere(q, k)
+    make_bot(config, messenger, searcher).on_message("goa mein kutte", CHAT)
+    assert messenger.texts() == ["No photos matched Goa, so these are from all places."]
+    assert len(messenger.albums()[0]) == 5
+    # The caption line names the place of a photo that has one.
+    assert messenger.albums()[0][0][1].startswith("1 · 2024-05-01 · Goa · ")
+
+
 def test_more_pages_through_the_last_search(bot, messenger, config):
     bot.on_message(QUERY, CHAT)
     bot.on_message("More", CHAT)
@@ -401,7 +422,7 @@ def test_original_over_the_size_limit_is_refused(config, chat_library, make_sear
 
 def test_caption_line_without_date_or_caption():
     r = Result("x", "a.jpg", None, None, None, 0.1, {})
-    assert caption_line(3, None, r) == "3"
+    assert caption_line(3, r) == "3"
 
 
 def test_unloaded_searcher_reopens_the_db(config, chat_library, make_searcher, messenger):

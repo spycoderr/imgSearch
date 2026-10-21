@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError, field_validator
 
 from imgsearch.config import WEEKDAYS, RewriterConfig
 from imgsearch.interfaces import ParsedQuery
-from imgsearch.search.text import query_words
+from imgsearch.search.words import query_words
 
 log = logging.getLogger(__name__)
 

@@ -27,9 +27,20 @@ def response_lines(response: SearchResponse) -> list[str]:
         start, end = q.date_range
         lines.append(f"dates: {start} to {end} found but not used (date filter off)")
 
+    if response.place_filter:
+        lines.append(f"place: {response.place_filter}")
+    elif response.place_fallback and q.place_filter:
+        lines.append(
+            f"place: no photos from {q.place_filter.label}; showing results from all places"
+        )
+    elif q.place_filter:
+        lines.append(f"place: {q.place_filter.label} found but not used (place filter off)")
+
     for rank, r in enumerate(response.results, start=1):
         matched = ", ".join(f"{signal} #{r.signals[signal][0]}" for signal in sorted(r.signals))
         lines.append(f"{rank:>2}  {r.score:.4f}  {r.orig_relpath}  [{matched}]")
+        if where_when := " · ".join(p for p in ((r.date or "")[:10], r.place) if p):
+            lines.append(f"    {where_when}")
         lines.append(f"    {short(r.caption or '(no caption)')}")
     if not response.results:
         lines.append("no matches")

@@ -467,7 +467,7 @@ volume isn't mounted. **Always eject the drive before unplugging it** (Finder, o
 
 ```sh
 uv run imgsearch import    # inbox -> originals_root only
-uv run imgsearch update    # import, then ingest, embed, ocr, filename (no captions)
+uv run imgsearch update    # import, then ingest, embed, ocr, filename, places (no captions)
 uv run imgsearch verify    # check every image's files
 ```
 
@@ -490,7 +490,7 @@ A failure on one file is listed with its path and doesn't stop the others; the i
 is kept, and the command exits 1. Running it again with nothing new does nothing. `import`
 is the only code that adds files under `originals_root`.
 
-**`update`** runs `import`, then the `ingest`, `embed`, `ocr` and `filename` stages through the runner,
+**`update`** runs `import`, then the `ingest`, `embed`, `ocr`, `filename` and `places` stages through the runner,
 and prints each step's counts. Captions are a separate, slow background job:
 `uv run imgsearch run caption`.
 
@@ -631,6 +631,64 @@ uv run imgsearch backfill folders            # record source_relpath and rewrite
 **Dates.** A photo's date for search is `taken_at` (EXIF), else `file_mtime`; the one SQL
 expression is in `imgsearch/store/dates.py`. See "Search (M5)" and "Query rewrite (M6)" for
 how a query's date becomes a filter.
+
+## Places from GPS (P1.8)
+
+Photos with GPS get a place: the nearest city, its district, state and country, and the
+nearest landmark (monument, fort, temple, park, beach, market, ...) within 1 km. It all
+happens offline, from [GeoNames](https://www.geonames.org/) data: no geocoding API is
+called, ever, and search uses only the DB.
+
+**Setup, once:**
+
+```sh
+uv run imgsearch geo download   # IN.zip + admin1/admin2/country names into data/geo (~18 MB)
+uv run imgsearch run places     # or let `update` run it (after filename)
+uv run imgsearch status         # "gps: N of M photos; places resolved: …"
+```
+
+- `geo download` fetches one `<CC>.zip` per country in `places.countries` (`[IN]`), plus
+  `admin1CodesASCII.txt`, `admin2Codes.txt` and `countryInfo.txt`. Files already there are
+  skipped (`--force` downloads them again). `data/geo/MANIFEST.tsv` records each file's size,
+  SHA-256, URL and download time. `data/` is git-ignored: the files are never committed.
+- Photos taken abroad: add the country's code to `places.countries` and run
+  `geo download` again. Without its data, a photo farther than `places.city_max_km` (30 km)
+  from every known place gets no place.
+- The `places` stage (no model, no pen drive) loads the files in under a second (about
+  200 MB of memory) and looks each photo up in about 1 ms. It writes migration 005's
+  `photo_places`, `places` and `place_names`, and a `place` full-text row per photo
+  ("Amber Fort Amer Jaipur Rajasthan India"), so `--signals vector,text` matches place names.
+- Photos without GPS are marked done with no place.
+- The rules are in `config.yaml` under `places:`:
+  - **city:** the nearest town of at least `city_min_population` (1,000).
+  - **district and state:** from the nearest populated place of any size, so a Noida photo
+    is in Uttar Pradesh even when New Delhi is the nearest city.
+  - **landmark:** the nearest feature with one of `landmark_codes` within `landmark_max_km`.
+  - Bump `stages.places` after changing them.
+
+**Place-aware search.** If the rewriter's `place` names a place some photo was taken at,
+search keeps only photos from there, or whose OCR text, caption or file name contains the
+name.
+- A place matches at every level: "Rajasthan" finds Jaipur and Amer photos, and "Jaipur"
+  matches both the city and the district.
+- GeoNames' alternate names count: Bangalore/Bengaluru, Gurgaon/Gurugram and जयपुर all
+  resolve.
+- Words that aren't places in the library ("park", "sofa", "home") are ignored.
+- With a date as well, both must hold.
+- If nothing matches, the place is dropped first (`place: no photos from Jaipur; showing
+  results from all places`), then the date.
+- `--no-place-filter` on `search` and `eval` turns it off.
+- Each result shows its date and place, in the CLI (`2023-12-30 · Amber Fort, Amer, Jaipur,
+  Rajasthan`) and in the bot's captions.
+
+Restaurants, shops and other businesses are not in GeoNames (17 restaurants for all of
+India), so a photo inside one gets its area, not its name.
+
+**Privacy.** Places are computed and stored only on the Mac, in the DB. The DB copy in S3
+is encrypted on the Mac first (P1.6). Bot captions show the place only to allowed users.
+
+**Credit.** Place data © [GeoNames](https://www.geonames.org/), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## Chat bot (P3)
 

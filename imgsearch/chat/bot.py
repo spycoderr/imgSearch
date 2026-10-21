@@ -17,7 +17,6 @@ never the message text, the chat or photo paths.
 
 import logging
 import re
-import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +26,6 @@ from imgsearch.chat.service import LazySearcher, traceback_lines
 from imgsearch.config import Config
 from imgsearch.interfaces import Result
 from imgsearch.search.show import short
-from imgsearch.store.dates import SEARCH_DATE_SQL
 from imgsearch.store.roots import is_available
 
 log = logging.getLogger(__name__)
@@ -115,7 +113,6 @@ class ChatBot:
         self.original_max_mb = original_max_mb
         self.page = config.search.top_k
         self.last: dict[str, LastSearch] = {}  # by chat
-        self.dates: dict[str, str | None] = {}  # image id -> search date, for captions
 
     def on_message(self, text: str, sender: str) -> None:
         """Reply to one text message. A failure becomes a short apology, never a traceback."""
@@ -150,7 +147,7 @@ class ChatBot:
         for rank, r in enumerate(results, start=first_rank):
             path = self._image_file(r, full_size)
             if path is not None:
-                photos.append((path, caption_line(rank, self.dates.get(r.image_id), r)))
+                photos.append((path, caption_line(rank, r)))
         if photos:
             self.messenger.show_activity(to, "upload_photo")
             self.messenger.send_photos(to, photos)
@@ -173,7 +170,6 @@ class ChatBot:
             ", rewrite fell back" if response.query.rewrite_error else "",
         )
         results = response.results
-        self.dates.update(search_dates(searcher.conn, [r.image_id for r in results]))
         if response.query.rewrite_error:
             self.messenger.send_text(sender, REWRITE_SKIPPED)
         if response.date_fallback and response.query.date_range:
@@ -181,6 +177,13 @@ class ChatBot:
             self.messenger.send_text(
                 sender,
                 f"No photos matched the dates {start} to {end}, so these are from all dates.",
+            )
+        if response.place_fallback and response.query.place_filter:
+            self.messenger.send_text(
+                sender,
+                f"No photos matched {response.query.place_filter.label}"
+                f"{' on those dates' if response.date_filter else ''},"
+                " so these are from all places.",
             )
         if not results:
             self.last.pop(sender, None)
@@ -255,20 +258,13 @@ def requested_count(text: str, most: int) -> int | None:
     return max(1, min(n, most)) if n else None
 
 
-def caption_line(rank: int, date: str | None, r: Result) -> str:
-    """e.g. "3 · 2024-05-03 · A brown dog sleeping on a sofa." """
+def caption_line(rank: int, r: Result) -> str:
+    """e.g. "3 · 2024-05-03 · Amer, Jaipur, Rajasthan · A brown dog sleeping on a sofa." """
     parts = [str(rank)]
-    if date:
-        parts.append(date[:10])
+    if r.date:
+        parts.append(r.date[:10])
+    if r.place:
+        parts.append(r.place)
     if r.caption:
         parts.append(short(r.caption))
     return " · ".join(parts)
-
-
-def search_dates(conn: sqlite3.Connection, image_ids: list[str]) -> dict[str, str | None]:
-    """Each image's date as search uses it: EXIF `taken_at`, else the file's mtime."""
-    marks = ",".join("?" * len(image_ids))
-    rows = conn.execute(
-        f"SELECT i.id, {SEARCH_DATE_SQL} FROM images i WHERE i.id IN ({marks})", image_ids
-    )
-    return {row[0]: row[1] for row in rows}

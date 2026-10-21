@@ -17,6 +17,7 @@ from imgsearch.stages.embed import EmbedStage
 from imgsearch.stages.filename import FilenameStage
 from imgsearch.stages.ingest import IngestStage
 from imgsearch.stages.ocr import OcrStage
+from imgsearch.stages.places import PlacesStage
 from imgsearch.stages.update import UPDATE_STAGES, update
 from imgsearch.store.db import connect
 from imgsearch.store.roots import DriveNotMounted, is_available, mount_point, require_mounted
@@ -78,7 +79,15 @@ def fake_update_stages(config: Config):
         EmbedStage(config, make_embedder=FakeEmbedder),
         OcrStage(config, engine=FakeOCR()),
         FilenameStage(config),
+        PlacesStage(config, gazetteer=NoGpsGazetteer()),
     ]
+
+
+class NoGpsGazetteer:
+    """The test photos have no GPS, so the places stage never looks one up."""
+
+    def lookup(self, lat: float, lon: float):
+        raise AssertionError("photos without GPS are not looked up")
 
 
 # ---- the pen-drive check ----
@@ -150,7 +159,7 @@ def test_search_says_nothing_when_the_drive_is_there(config_path: Path, conn, ad
 
 
 def test_update_runs_import_ingest_embed_ocr_without_captions():
-    assert [cls.name for cls in UPDATE_STAGES] == ["ingest", "embed", "ocr", "filename"]
+    assert [cls.name for cls in UPDATE_STAGES] == ["ingest", "embed", "ocr", "filename", "places"]
     assert CaptionStage not in UPDATE_STAGES
 
 
@@ -166,6 +175,7 @@ def test_update_imports_then_indexes(config: Config, conn):
         "embed": {"done": 2, "failed": 0},
         "ocr": {"done": 2, "failed": 0},
         "filename": {"done": 2, "failed": 0},
+        "places": {"done": 2, "failed": 0},
     }
     assert conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0] == 2
     # The inbox name and the file's date are recorded, and the name is searchable.
@@ -209,6 +219,7 @@ def test_update_cli_reports_each_step(config_path: Path, config: Config):
         "embed: 0 processed (0 done, 0 failed)",
         "ocr: 0 processed (0 done, 0 failed)",
         "filename: 0 processed (0 done, 0 failed)",
+        "places: 0 processed (0 done, 0 failed)",
     ]
 
 

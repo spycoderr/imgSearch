@@ -20,12 +20,21 @@ def eval_command(
         bool,
         typer.Option("--no-date-filter", help="Ignore dates found in the queries."),
     ] = False,
+    no_place_filter: Annotated[
+        bool,
+        typer.Option("--no-place-filter", help="Ignore places found in the queries."),
+    ] = False,
 ) -> None:
     """Run every ablation on eval.queries and write a run folder with a contact sheet."""
     config: Config = ctx.obj
     with closing(connect(config)) as conn:
         run_dir = evaluate(
-            config, ctx.meta["config_path"], conn, typer.echo, date_filter=not no_date_filter
+            config,
+            ctx.meta["config_path"],
+            conn,
+            typer.echo,
+            date_filter=not no_date_filter,
+            place_filter=not no_place_filter,
         )
     typer.echo("")
     for line in all_tables(load_metrics(run_dir)):

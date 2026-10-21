@@ -64,6 +64,13 @@ def _query_block(qid: str, runs: dict[str, dict], paths: dict[str, str]) -> str:
             else ("filtered" if rewritten["date_filter"] else "not used")
         )
         rewrite += f" · dates {escape(start)} to {escape(end)} ({used})"
+    if rewritten.get("place_resolved"):  # runs before P1.8 have no place fields
+        used = (
+            "fell back to all places"
+            if rewritten["place_fallback"]
+            else ("filtered" if rewritten["place_filter"] else "not used")
+        )
+        rewrite += f" · place {escape(rewritten['place_resolved'])} ({used})"
     scores = "".join(
         f"<tr><td>{escape(name)}</td><td class='{'hit' if r['hit@5'] else 'miss'}'>"
         f"{r['hit@5']:.0f} / {r['recall@5']:.2f} / {r['rr']:.2f}</td></tr>"

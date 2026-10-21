@@ -21,7 +21,7 @@ def test_project_config_loads(env_file: Path):
     config = load_config(DEFAULT_CONFIG_PATH, env_file)
     assert config.models.embedder.dim == 768
     # Names only: versions are bumped to re-run stages.
-    assert set(config.stages) == {"ingest", "embed", "ocr", "caption", "filename"}
+    assert set(config.stages) == {"ingest", "embed", "ocr", "caption", "filename", "places"}
     assert config.search.top_k == 5
 
 

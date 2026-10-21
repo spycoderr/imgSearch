@@ -24,7 +24,9 @@ def rewrite(ctx: typer.Context, query: str) -> None:
     start = time.perf_counter()
     parsed = OllamaRewriter(config.models.rewriter).rewrite(query)
     elapsed = time.perf_counter() - start
-    typer.echo(json.dumps(dataclasses.asdict(parsed), ensure_ascii=False, indent=2))
+    fields = dataclasses.asdict(parsed)
+    del fields["place_filter"]  # set by search, not by the rewrite
+    typer.echo(json.dumps(fields, ensure_ascii=False, indent=2))
     typer.echo(f"took {elapsed:.2f}s")
 
 
@@ -46,11 +48,18 @@ def search(
         bool,
         typer.Option("--no-date-filter", help="Ignore a date found in the query."),
     ] = False,
+    no_place_filter: Annotated[
+        bool,
+        typer.Option("--no-place-filter", help="Ignore a place found in the query."),
+    ] = False,
 ) -> None:
     """Search: rewrite QUERY to English, run the chosen retrievers, fuse them with RRF.
 
     A date in the query ("15 sept", "kal", "last week") limits the results to photos from
-    then (EXIF date, else file date), unless nothing matches or --no-date-filter is given."""
+    then (EXIF date, else file date), unless nothing matches or --no-date-filter is given.
+    A place in the query ("Goa", "India Gate", "जयपुर") that some photo was taken at limits
+    them to photos from there or whose text names it, unless nothing matches or
+    --no-place-filter is given."""
     config: Config = ctx.obj
     names = None
     if signals is not None:
@@ -62,7 +71,11 @@ def search(
         searcher = open_searcher(config, conn, signals=names, rewrite=not no_rewrite)
         loaded = time.perf_counter() - start
         response = searcher.search(
-            query, k=k, rewrite=not no_rewrite, date_filter=not no_date_filter
+            query,
+            k=k,
+            rewrite=not no_rewrite,
+            date_filter=not no_date_filter,
+            place_filter=not no_place_filter,
         )
     for line in response_lines(response):
         typer.echo(line)
