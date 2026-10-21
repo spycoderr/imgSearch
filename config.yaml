@@ -111,7 +111,7 @@ stages:
   ocr: "1"
   caption: "1"
   filename: "1"
-  places: "1"
+  places: "2"
 
 search:
   top_k: 5
@@ -143,7 +143,9 @@ places:
     PRK, GDN, ZOO, AMUS, MKT, MALL, STDM,                    # parks, gardens, markets
     BCH, BCHS, LK, FLLS,                                     # beaches, lakes, waterfalls
   ]
-  landmark_max_km: 1.0
+  # 0.5, not 1.0 (P1.8 phase B): at 1 km a home 0.88 km from "Hauz Khas village" got it as
+  # its landmark on 91 photos; real visits were within 0.3 km (India Gate 0.05, Lotus Temple 0.28).
+  landmark_max_km: 0.5
 
 eval:
   queries: eval/queries.yaml   # the labelled query set

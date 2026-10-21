@@ -325,7 +325,8 @@ def test_stage_writes_place_names_as_search_text(library):
 def test_stage_is_idempotent_and_reruns_on_a_version_bump(library, geo: Config):
     ctx = Context(config=geo, conn=library)
     assert run_stage(PlacesStage(geo), ctx) == {"done": 0, "failed": 0}
-    bumped = geo.model_copy(update={"stages": {**geo.stages, "places": "2"}})
+    bumped_version = str(int(geo.stages["places"]) + 1)
+    bumped = geo.model_copy(update={"stages": {**geo.stages, "places": bumped_version}})
     with library:  # the photo lost its GPS (e.g. corrected): the re-run removes its place
         library.execute("UPDATE images SET lat = NULL, lon = NULL WHERE id = 'gate'")
     stage = PlacesStage(bumped)
