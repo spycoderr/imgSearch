@@ -15,7 +15,7 @@ import time
 import traceback
 from collections.abc import Callable
 
-from imgsearch.chat.whatsapp import Incoming
+from imgsearch.chat.whatsapp import Incoming, log_id
 from imgsearch.search.hybrid import Searcher
 
 log = logging.getLogger(__name__)
@@ -102,7 +102,9 @@ class Worker:
                 start = time.perf_counter()
                 self.handle(message)
                 log.info(
-                    "message %s handled in %.2fs", message.message_id, time.perf_counter() - start
+                    "message %s handled in %.2fs",
+                    log_id(message.message_id),
+                    time.perf_counter() - start,
                 )
             except Exception as e:  # one failed message must not stop the bot
                 log.error("message failed: %s\n%s", type(e).__name__, traceback_lines(e))

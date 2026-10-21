@@ -688,34 +688,47 @@ phone -> WhatsApp -> Meta -> Cloudflare Tunnel (public HTTPS) -> imgsearch serve
 6. Start the bot and the tunnel (below), then in **WhatsApp > Configuration** set the
    callback URL to `https://<your tunnel host>/webhook`, enter the verify token, and
    subscribe to the **messages** field.
+7. **Subscribe the app to the WhatsApp Business Account.** The dashboard step above isn't
+   always enough: the account must also list your app in its `subscribed_apps`, or no
+   messages or status callbacks reach the webhook (in P3 phase B it listed only Meta's
+   internal "WA DevX Webhook Events 1P App"). With the token from step 3:
+
+   ```sh
+   curl -X POST -H "Authorization: Bearer $WHATSAPP_TOKEN" \
+     https://graph.facebook.com/v26.0/<WABA id>/subscribed_apps          # {"success": true}
+   curl -H "Authorization: Bearer $WHATSAPP_TOKEN" \
+     https://graph.facebook.com/v26.0/<WABA id>/subscribed_apps          # should list your app
+   ```
+
+   The WABA id is on the API Setup page (WhatsApp Business Account ID).
 
 ### The tunnel
 
-Meta needs a public HTTPS URL; the bot only listens on 127.0.0.1. Cloudflare Tunnel connects
-the two without opening a port on the router.
+Meta needs a public HTTPS URL; the bot only listens on 127.0.0.1. **Tailscale Funnel** (used
+in P3) gives the Mac a fixed public name, `https://<machine>.<tailnet>.ts.net`, with no port
+opened on the router. Turn on HTTPS certificates for the tailnet first; the first `funnel`
+command prints a link to approve Funnel for the tailnet.
 
 ```sh
-brew install cloudflared
-cloudflared tunnel --url http://127.0.0.1:8765    # quick test: prints a random https://….trycloudflare.com
+# Forward only the webhook path; /health and everything else stay private.
+tailscale funnel --bg --set-path /webhook http://127.0.0.1:8765/webhook
+tailscale funnel status                    # shows https://<host>/webhook -> proxy
+tailscale funnel --https=443 off           # stop it
 ```
 
-The quick-tunnel URL changes each run. For a fixed URL, make a named tunnel on a domain you
-have in Cloudflare (`cloudflared tunnel login`, `cloudflared tunnel create imgsearch`,
-`cloudflared tunnel route dns imgsearch bot.example.com`) with this `~/.cloudflared/config.yml`,
-which forwards only the webhook path:
+- `--bg` keeps it running after the terminal closes, and across restarts of tailscaled.
+- **The public DNS name can take ~15 minutes to appear** after Funnel is first approved.
+  Until then Meta's "Verify and save" fails with "The callback URL or verify token couldn't
+  be validated", and the bot's log shows no request. Check it from outside the tailnet's
+  MagicDNS:
+  `curl -s -H 'accept: application/dns-json' 'https://dns.google/resolve?name=<host>&type=A'`
+  should show an `Answer`. Curl on the Mac itself resolves the name through MagicDNS (and so
+  does Claude Code's WebFetch), so it doesn't prove the public path. Pin a public IP from
+  that answer instead: `curl --resolve <host>:443:<ip> https://<host>/webhook`.
 
-```yaml
-tunnel: <tunnel id>
-credentials-file: /Users/<you>/.cloudflared/<tunnel id>.json
-ingress:
-  - hostname: bot.example.com
-    path: ^/webhook$
-    service: http://127.0.0.1:8765
-  - service: http_status:404
-```
-
-Run it with `cloudflared tunnel run imgsearch`, or at login with `sudo cloudflared service
-install`.
+Cloudflare Tunnel also works (`cloudflared tunnel --url http://127.0.0.1:8765` for a quick
+random URL; a named tunnel on your own domain for a fixed one, with an ingress rule `path:
+^/webhook$`).
 
 ### Running it
 
@@ -744,6 +757,7 @@ launchctl bootout gui/$(id -u)/com.imgsearch.serve      # to stop it and remove 
 - Messages from numbers not in `WHATSAPP_ALLOWED_SENDERS` get no reply; the log counts them.
 - A message delivered twice (Meta retries) is answered once. The webhook answers 200 at once
   and searches in the background.
-- Logs hold message ids, counts and timings only: no message text, phone numbers, file names
-  or photos. The HTTP access log is off, because the verification request carries the verify
+- Logs hold hashed message ids (`m-` + 10 hex digits; a raw WhatsApp id contains the phone
+  number), counts, timings and delivery statuses with Meta's error code and title only: no
+  message text, phone numbers, file names or photos. The HTTP access log is off, because the verification request carries the verify
   token in its URL.

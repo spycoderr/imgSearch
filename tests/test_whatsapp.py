@@ -38,6 +38,7 @@ from imgsearch.chat.whatsapp import (
     delivery_statuses,
     incoming_messages,
     load_secrets,
+    log_id,
     signature_ok,
 )
 from imgsearch.commands.serve import HOST, build_app
@@ -227,6 +228,12 @@ def test_load_secrets_names_every_missing_key(tmp_path: Path):
 
 def sign(body: bytes, secret: str = SECRETS.app_secret) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+def test_log_id_hides_the_number_inside_a_wamid():
+    wamid = "wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA="  # Meta's example
+    assert log_id(wamid) == log_id(wamid) != log_id(wamid + "x")
+    assert "16503879439" not in log_id(wamid) and "wamid" not in log_id(wamid)
 
 
 def test_signature_check():
@@ -705,7 +712,8 @@ def test_logs_hold_no_message_text_or_numbers(service, graph, caplog):
         service.post(client, payload(text_message(QUERY, message_id="wamid.log")))
         service.post(client, payload(text_message("original 1", message_id="wamid.log2")))
     assert len(graph.images()) == 5 and len(documents(graph)) == 1
-    assert "wamid.log" in caplog.text  # ids and counts are fine
+    assert log_id("wamid.log") in caplog.text  # hashed ids and counts are fine
+    assert "wamid" not in caplog.text
     for secret in (QUERY, SENDER, PHONE_ID, "IMG_0001", "test-token", "test-app-secret"):
         assert secret not in caplog.text
 
@@ -715,9 +723,13 @@ def test_status_callbacks_are_logged_without_the_recipient(service, graph, caplo
     with caplog.at_level(logging.INFO), TestClient(service.app) as client:
         response = service.post(client, status_payload(SENT, FAILED))
         assert response.status_code == 200
-    assert "message wamid.out1 sent" in caplog.text
-    assert "message wamid.out2 failed (error 131049: This message was not delivered" in caplog.text
-    [failed] = [r for r in caplog.records if "wamid.out2" in r.getMessage()]
+    assert f"message {log_id('wamid.out1')} sent" in caplog.text
+    assert (
+        f"message {log_id('wamid.out2')} failed (error 131049: This message was not delivered"
+        in caplog.text
+    )
+    assert "wamid" not in caplog.text  # ids hold the phone number; only hashes are logged
+    [failed] = [r for r in caplog.records if log_id("wamid.out2") in r.getMessage()]
     assert failed.levelno == logging.WARNING
     assert SENDER not in caplog.text
     assert graph.requests == [] and service.rewriter.queries == []

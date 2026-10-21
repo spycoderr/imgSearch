@@ -123,6 +123,12 @@ def _values(payload: Mapping[str, Any], phone_number_id: str) -> list[Mapping[st
     ]
 
 
+def log_id(message_id: str) -> str:
+    """A short stand-in for a message id in logs. A `wamid` is base64 that includes the
+    other party's phone number, so it is never logged as is."""
+    return "m-" + hashlib.sha256(message_id.encode()).hexdigest()[:10]
+
+
 class GraphError(Exception):
     """The Graph API refused a request."""
 

@@ -27,6 +27,7 @@ from imgsearch.chat.whatsapp import (
     Secrets,
     delivery_statuses,
     incoming_messages,
+    log_id,
     signature_ok,
 )
 
@@ -56,9 +57,9 @@ def log_status(status: DeliveryStatus) -> None:
     never the recipient. A failure is a warning: it is the only sign a reply didn't arrive."""
     if status.errors:
         errors = "; ".join(f"error {code}: {title}" for code, title in status.errors)
-        log.warning("message %s %s (%s)", status.message_id, status.status, errors)
+        log.warning("message %s %s (%s)", log_id(status.message_id), status.status, errors)
     else:
-        log.info("message %s %s", status.message_id, status.status)
+        log.info("message %s %s", log_id(status.message_id), status.status)
 
 
 def create_app(secrets: Secrets, worker: Worker, status: Callable[[], dict[str, Any]]) -> FastAPI:
@@ -104,7 +105,7 @@ def create_app(secrets: Secrets, worker: Worker, status: Callable[[], dict[str, 
                 repeated += 1
             else:
                 worker.submit(message)
-                log.info("message %s queued (%s)", message.message_id, message.kind)
+                log.info("message %s queued (%s)", log_id(message.message_id), message.kind)
         if not_allowed or repeated:
             log.info("webhook: %d from senders not allowed, %d repeated", not_allowed, repeated)
         return Response(status_code=200)
