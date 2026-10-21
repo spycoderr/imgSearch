@@ -28,6 +28,7 @@ named next to them.
 | P1.5-A | Pen-drive storage layout, `imgsearch import` (inbox → originals), `update`, `verify` | done |
 | P1.6 | Originals encrypted in S3 Glacier Instant Retrieval; pen drive as an LRU cache: `upload`, `evict`, `fetch` | done |
 | P1.7 | File names and phone folders as search text, date filtering, weighted RRF, `backfill` | done (eval in `docs/eval/baseline-p1.7.md`) |
+| P3 | WhatsApp bot (official Cloud API): `imgsearch serve` | phase A (code and tests) done; phase B (real messages) pending |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -631,3 +632,118 @@ uv run imgsearch backfill folders            # record source_relpath and rewrite
 expression is in `imgsearch/store/dates.py`. See "Search (M5)" and "Query rewrite (M6)" for
 how a query's date becomes a filter.
 
+## WhatsApp bot (P3)
+
+Search from your phone: send a WhatsApp message to the bot's number and it replies with the
+best matching photos. It uses the official WhatsApp Cloud API (plan D13) and Meta's free test
+number. Only numbers you allow get a reply.
+
+```
+phone -> WhatsApp -> Meta -> Cloudflare Tunnel (public HTTPS) -> imgsearch serve (127.0.0.1:8765)
+                                                                     -> search() -> photos back
+```
+
+### What it understands
+
+| Message | Reply |
+| --- | --- |
+| any text, e.g. `mummy ke saath beach pe` | The top 5 photos (`search.top_k`), each with "rank · date · short caption". Same search as `imgsearch search` (rewrite on, `search.default_signals`) |
+| `more` | The next 5 for your last search (up to `whatsapp.max_results`) |
+| `original N` | Photo N's original file, as a document, if it's on the pen drive or can be fetched from S3, and under `whatsapp.original_max_mb` |
+| `help` | The list above |
+
+- Photos are sent as the resized derivative (never the original), uploaded to WhatsApp's media
+  endpoint and sent by media id, so there is no public link to any photo.
+- With the pen drive unplugged, it sends the thumbnails and says full-size images are
+  unavailable.
+- If the rewrite fails it says so and searches the text as written. No results or an error
+  give a one-line reply.
+- SigLIP loads on the first message (a few seconds) and unloads after
+  `whatsapp.idle_unload_s` (5 min) without messages (D21). Ollama unloads the rewriter on its
+  own after 5 idle minutes. Searching needs about 7 GB, so don't use the bot during a caption
+  run.
+
+### One-time Meta setup
+
+1. At [developers.facebook.com](https://developers.facebook.com/), create an app (type
+   Business) and add the **WhatsApp** product. It comes with a free test number.
+2. **WhatsApp > API Setup:** note the **Phone number ID**. Add your own number (and up to 4
+   more) as a recipient; WhatsApp sends each a code to confirm it.
+3. **Permanent token:** the token on the API Setup page expires in about 24 hours. In Meta
+   Business Settings, create a **system user**, give it the app and the WhatsApp account, and
+   generate a token with `whatsapp_business_messaging` and `whatsapp_business_management`
+   that never expires.
+4. **App settings > Basic:** copy the **App secret**. The bot uses it to check that each
+   webhook call really comes from Meta (`X-Hub-Signature-256`).
+5. Put everything in `.env` (git-ignored; see `.env.example`):
+
+   | Key | Value |
+   | --- | --- |
+   | `WHATSAPP_TOKEN` | the system-user token |
+   | `WHATSAPP_PHONE_NUMBER_ID` | the test number's Phone number ID |
+   | `WHATSAPP_APP_SECRET` | the app secret |
+   | `WHATSAPP_VERIFY_TOKEN` | any long random string; you type the same one into the webhook setup |
+   | `WHATSAPP_ALLOWED_SENDERS` | comma-separated numbers allowed to search, with country code (`919812345678`) |
+
+6. Start the bot and the tunnel (below), then in **WhatsApp > Configuration** set the
+   callback URL to `https://<your tunnel host>/webhook`, enter the verify token, and
+   subscribe to the **messages** field.
+
+### The tunnel
+
+Meta needs a public HTTPS URL; the bot only listens on 127.0.0.1. Cloudflare Tunnel connects
+the two without opening a port on the router.
+
+```sh
+brew install cloudflared
+cloudflared tunnel --url http://127.0.0.1:8765    # quick test: prints a random https://….trycloudflare.com
+```
+
+The quick-tunnel URL changes each run. For a fixed URL, make a named tunnel on a domain you
+have in Cloudflare (`cloudflared tunnel login`, `cloudflared tunnel create imgsearch`,
+`cloudflared tunnel route dns imgsearch bot.example.com`) with this `~/.cloudflared/config.yml`,
+which forwards only the webhook path:
+
+```yaml
+tunnel: <tunnel id>
+credentials-file: /Users/<you>/.cloudflared/<tunnel id>.json
+ingress:
+  - hostname: bot.example.com
+    path: ^/webhook$
+    service: http://127.0.0.1:8765
+  - service: http_status:404
+```
+
+Run it with `cloudflared tunnel run imgsearch`, or at login with `sudo cloudflared service
+install`.
+
+### Running it
+
+```sh
+uv run imgsearch serve                    # listens on 127.0.0.1:8765 (whatsapp.port)
+curl http://127.0.0.1:8765/health         # {"status": "ok", "models_loaded": false, "queued": 0}
+```
+
+`/health` answers on the Mac only: a request that came through the tunnel gets 404. There
+are no other routes: no docs pages, no files.
+
+To start it at login, use the launchd template `docs/launchd/com.imgsearch.serve.plist`:
+
+```sh
+mkdir -p data/logs
+# edit the copy: replace PROJECT_DIR (this folder) and UV_PATH (output of `which uv`)
+cp docs/launchd/com.imgsearch.serve.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.imgsearch.serve.plist
+launchctl bootout gui/$(id -u)/com.imgsearch.serve      # to stop it and remove it from login
+```
+
+### Security and privacy
+
+- The webhook rejects any `POST` without a valid `X-Hub-Signature-256` (HMAC-SHA256 of the
+  body with the app secret, compared in constant time) with 401.
+- Messages from numbers not in `WHATSAPP_ALLOWED_SENDERS` get no reply; the log counts them.
+- A message delivered twice (Meta retries) is answered once. The webhook answers 200 at once
+  and searches in the background.
+- Logs hold message ids, counts and timings only: no message text, phone numbers, file names
+  or photos. The HTTP access log is off, because the verification request carries the verify
+  token in its URL.

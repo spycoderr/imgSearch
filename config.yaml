@@ -149,3 +149,13 @@ storage:
 # each already-imported photo came from. The API key is SYNCTHING_API_KEY in .env.
 syncthing:
   url: "http://127.0.0.1:8384"
+# The WhatsApp bot (P3, plan D13): `imgsearch serve`. The token, phone-number id, app secret,
+# webhook verify token and allowed senders come from .env (git-ignored; see .env.example).
+whatsapp:
+  graph_url: https://graph.facebook.com
+  api_version: v26.0
+  port: 8765              # on 127.0.0.1 only; Cloudflare Tunnel gives it a public URL
+  timeout_s: 30
+  max_results: 20         # per search; `more` pages through them, search.top_k at a time
+  idle_unload_s: 300      # SigLIP unloads after 5 idle minutes, like Ollama's keep_alive (D21)
+  original_max_mb: 100    # WhatsApp's document size limit

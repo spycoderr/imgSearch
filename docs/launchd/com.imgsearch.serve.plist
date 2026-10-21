@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template: runs `imgsearch serve` (the WhatsApp bot) at login and restarts it if it exits.
+  Not installed by any task. To install, see README "WhatsApp bot (P3)":
+    1. Replace PROJECT_DIR (the folder holding config.yaml) and UV_PATH (`which uv`).
+    2. cp docs/launchd/com.imgsearch.serve.plist ~/Library/LaunchAgents/
+    3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.imgsearch.serve.plist
+  Secrets stay in PROJECT_DIR/.env; nothing secret goes in this file.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.imgsearch.serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>UV_PATH</string>
+    <string>run</string>
+    <string>imgsearch</string>
+    <string>serve</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>PROJECT_DIR</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>PROJECT_DIR/data/logs/serve.log</string>
+  <key>StandardErrorPath</key>
+  <string>PROJECT_DIR/data/logs/serve.log</string>
+</dict>
+</plist>

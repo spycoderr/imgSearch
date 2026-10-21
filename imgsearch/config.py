@@ -139,6 +139,18 @@ class StorageConfig(_Strict):
     cache_max_gb: float  # `imgsearch evict` keeps the originals on the pen drive under this
 
 
+class WhatsAppConfig(_Strict):
+    """The WhatsApp bot (P3). Secrets are not here: they come from .env (see .env.example)."""
+
+    graph_url: str  # Graph API base URL
+    api_version: str  # e.g. v26.0
+    port: int  # `imgsearch serve` listens on 127.0.0.1 at this port; the tunnel forwards to it
+    timeout_s: float  # per Graph API request; uploads included
+    max_results: int  # results kept per sender, so `more` can page through them
+    idle_unload_s: float  # unload SigLIP after this long without a message (D21)
+    original_max_mb: float  # `original N` refuses files over this (document limit: 100 MB)
+
+
 class Config(_Strict):
     originals_root: Path  # pen drive (plan D18); only `imgsearch import` adds files here
     derivatives_root: Path  # pen drive: 2048px derivatives
@@ -152,6 +164,7 @@ class Config(_Strict):
     s3: S3Config
     storage: StorageConfig
     syncthing: SyncthingConfig
+    whatsapp: WhatsAppConfig
 
     @field_validator("db_path")
     @classmethod
