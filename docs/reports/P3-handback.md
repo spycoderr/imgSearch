@@ -163,3 +163,5 @@ off with `tailscale funnel --https=443 off`.
 Next: business verification and/or a Meta support ticket for the unlock (error 131031, WABA
 1650890083124255), plus a permanent system-user token. Then restart `serve` and send one
 test message.
+
+**Update:** Funnel turned off as well (`tailscale funnel --https=443 off`). Nothing from P3 is running.
