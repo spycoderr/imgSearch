@@ -10,7 +10,10 @@ from imgsearch.config import DEFAULT_CONFIG_PATH, PROJECT_ROOT, load_config
 def env_file(tmp_path: Path) -> Path:
     """A stand-in for the project's git-ignored .env, so tests don't depend on this machine."""
     path = tmp_path / ".env"
-    path.write_text("IMGSEARCH_STORAGE_ROOT=/Volumes/PEN DRIVE/imgsearch\n")
+    path.write_text(
+        "IMGSEARCH_STORAGE_ROOT=/Volumes/PEN DRIVE/imgsearch\n"
+        "IMGSEARCH_S3_BUCKET=example-bucket\nAWS_PROFILE=example-profile\n"
+    )
     return path
 
 

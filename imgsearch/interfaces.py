@@ -86,6 +86,20 @@ class Context:
     conn: sqlite3.Connection
 
 
+@dataclass(frozen=True)
+class ObjectInfo:
+    """What an ObjectStore reports about one stored object version."""
+
+    size: int
+    version_id: str
+    sha256: str  # hex SHA-256 of the stored bytes, as checked by the store
+    metadata: dict[str, str] = field(default_factory=dict)
+
+
+class StoreUnavailable(Exception):
+    """The object store can't be reached (offline, no credentials). Nothing was stored."""
+
+
 # ---- Protocols ----
 
 
@@ -123,6 +137,19 @@ class QueryRewriter(Protocol):
 
 class Retriever(Protocol):
     def retrieve(self, q: ParsedQuery, k: int) -> list[Candidate]: ...
+
+
+class ObjectStore(Protocol):
+    """Versioned object storage (P1.6: S3). Nothing ever deletes; a put to a used key adds
+    a new version. Methods raise StoreUnavailable when the store can't be reached."""
+
+    def put(
+        self, key: str, data: bytes, sha256: str, metadata: dict[str, str] | None = None
+    ) -> str: ...  # returns the new version id; rejected if `data` doesn't hash to `sha256`
+    def get(self, key: str, version_id: str | None = None) -> bytes: ...
+    def head(
+        self, key: str, version_id: str | None = None
+    ) -> ObjectInfo | None: ...  # None: absent
 
 
 class ChatAdapter(Protocol):

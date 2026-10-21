@@ -26,6 +26,7 @@ named next to them.
 | M6 | Query rewriter for Hinglish/Hindi (Ollama) | done (wired into search by M5) |
 | M7 | Eval harness: recall@5 report and HTML contact sheet | done (baseline in `docs/eval/baseline.md`) |
 | P1.5-A | Pen-drive storage layout, `imgsearch import` (inbox → originals), `update`, `verify` | done |
+| P1.6 | Originals encrypted in S3 Glacier Instant Retrieval; pen drive as an LRU cache: `upload`, `evict`, `fetch` | done |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -71,8 +72,10 @@ ollama pull qwen2.5:7b
 Then tell the project where the external drive's storage folder is:
 
 ```sh
-cp .env.example .env    # then edit IMGSEARCH_STORAGE_ROOT
+cp .env.example .env    # then edit IMGSEARCH_STORAGE_ROOT, IMGSEARCH_S3_BUCKET, AWS_PROFILE
 ```
+
+For the S3 copy of the originals, see "Originals in S3" below (one-time key setup).
 
 Add dependencies with `uv add <pkg>` (or `uv add --dev <pkg>`), never `pip install`.
 
@@ -90,13 +93,18 @@ inboxes: [data/inbox/phone, data/inbox/camera]   # Mac; Syncthing writes here
 models: {embedder: ..., captioner: ..., rewriter: ..., ocr: ...}
 stages: {ingest: "2", embed: "2", ocr: "1", caption: "1"}  # bump a version to re-run that stage
 search: {top_k: 5, per_retriever_k: 10, rrf_k: 60, default_signals: [vector]}
+s3: {bucket: "${IMGSEARCH_S3_BUCKET}", profile: "${AWS_PROFILE}", region: ap-south-1,
+     storage_class: GLACIER_IR, originals_prefix: originals/, db_key: db/imgsearch.sqlite.enc, ...}
+storage: {cache_max_gb: 20}   # pen-drive cap for originals; `imgsearch evict` enforces it
 ```
 
 **Machine-specific paths live in `.env`**, not in `config.yaml`. `.env` is git-ignored;
-`.env.example` shows its one setting:
+`.env.example` shows its settings:
 
 ```sh
 IMGSEARCH_STORAGE_ROOT=/Volumes/<drive name>/imgsearch
+IMGSEARCH_S3_BUCKET=<bucket name>
+AWS_PROFILE=<profile in ~/.aws/>
 ```
 
 `${VAR}` in a path in `config.yaml` is filled from the environment first, then from `.env`.
@@ -471,3 +479,71 @@ inbox never touches the phone. Syncthing then lists those files as "locally chan
 **Disk use on exFAT.** The pen drive uses 128 KiB clusters, and macOS writes a hidden
 `._<name>` file (one cluster) next to every file it creates there. Expect each original or
 derivative to cost its size rounded up, plus about 128 KiB.
+
+## Originals in S3, pen drive as a cache (P1.6)
+
+Plan D19: the originals' primary home is **S3 Glacier Instant Retrieval**, encrypted on the
+Mac before upload. The pen drive keeps a least-recently-used cache of them. Search never
+reads originals, so evicted photos are still found; `fetch` brings one back in a second or two.
+
+**Setup (already done for this Mac).** A private bucket in `ap-south-1` with versioning,
+Block Public Access and a lifecycle rule that expires old versions after 90 days. An IAM user
+whose key can only put, get and head objects in that bucket: it can't delete objects or change
+versioning, so the code never deletes from S3, and re-uploading a key adds a new version. The
+key is in `~/.aws/` under the profile named by `AWS_PROFILE`; the bucket name is
+`IMGSEARCH_S3_BUCKET`. Both are in `.env`, so no committed file names them.
+
+**The encryption key.** AES-256-GCM, one random 256-bit key, kept in the macOS Keychain
+(item `imgsearch-s3`, from `s3.keychain_service`), read through the built-in `security` command.
+
+```sh
+uv run imgsearch s3-key create   # once; refuses if a key already exists
+uv run imgsearch s3-key export   # run in your own Terminal, then save it in a password manager
+```
+
+> **Back up the key.** A lost key means the S3 copies can never be decrypted: the backups
+> become useless. After `create`, run `export` yourself, store the 64 hex characters in a
+> password manager, and clear the terminal. The key is never written to the repo, `.env`
+> or a log. To restore on another Mac, add it back with
+> `security add-generic-password -s imgsearch-s3 -a encryption-key -w` (it prompts).
+
+**Commands**
+
+```sh
+uv run imgsearch upload               # every original not yet in S3, then an encrypted DB copy
+uv run imgsearch update               # import -> upload -> ingest -> embed -> ocr
+uv run imgsearch evict --dry-run      # list what would leave the pen drive
+uv run imgsearch evict                # remove LRU originals until under storage.cache_max_gb
+uv run imgsearch evict --cap-gb 3.5   # ... or under another cap
+uv run imgsearch fetch <image id or path under originals_root>   # prints the local path
+uv run imgsearch restore-check --sample 10   # download + decrypt + hash-check; writes nothing
+uv run imgsearch status               # adds "s3:" and "cache:" lines
+```
+
+- **Objects.** An original is stored as `originals/<image id>` (its SHA-256), so S3 never sees
+  file names or dates. Each object is `IMGS` + format version + a fresh 12-byte nonce, then the
+  AES-GCM ciphertext and tag. The upload sends a SHA-256 of the encrypted bytes, so S3 rejects
+  a corrupted upload. A copy counts as verified (`s3_copies.verified_at`) only after S3
+  reports the same size and checksum for the exact version written; the version id and the
+  encrypted hash are stored.
+- **`upload`** skips originals with a verified copy, so a second run uploads nothing. One
+  failure is listed and doesn't stop the others. It also uploads `db/imgsearch.sqlite.enc`, a
+  copy made with SQLite's online backup API, encrypted the same way, but only when the DB has
+  changed since the last copy (bucket versioning keeps the older copies for 90 days). Without
+  the DB, the objects can't be mapped back to file paths. Offline, it prints
+  `upload: not run: S3 unreachable: ...`, changes nothing and exits 1.
+- **`update`** uploads right after the import. If the upload can't run (offline, or no key),
+  indexing still runs, the summary says how many originals are not yet in S3, and the next
+  run uploads them.
+- **`evict`** removes originals from the pen drive, least recently used first (last `fetch`,
+  else the time it was registered), until the rest are under the cap. It removes one only if
+  it has a verified S3 copy (re-checked with S3 just before) and its ingest is done. It never
+  touches the `images` row: search, thumbnails and derivatives are unaffected. Sizes are file
+  sizes; exFAT adds about 8% on disk.
+- **`fetch`** returns the local path. If the original was evicted, it downloads the recorded
+  version, checks the encrypted hash, decrypts, checks that the SHA-256 equals the image id,
+  and writes it back to the same path (temp file, fsync, rename; never over an existing file),
+  with its original mtime. A mismatch fails loudly and writes nothing.
+- **`verify`** skips the hash check for evicted originals (it still checks their derivative
+  and thumbnail) and says how many it skipped; `restore-check` covers the S3 side.
+

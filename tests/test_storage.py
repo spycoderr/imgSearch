@@ -20,6 +20,7 @@ from imgsearch.stages.update import UPDATE_STAGES, update
 from imgsearch.store.db import connect
 from imgsearch.store.roots import DriveNotMounted, is_available, mount_point, require_mounted
 from imgsearch.store.text import save_ocr
+from imgsearch.store.upload import UploadResult
 
 # A volume that is never mounted. Nothing is ever written there: the check runs first.
 MISSING_DRIVE = Path("/Volumes/imgsearch-test-no-such-drive")
@@ -62,6 +63,10 @@ class FakeOCR:
         return "text"
 
 
+def never_called() -> UploadResult:
+    raise AssertionError("the upload step must not run")
+
+
 def fake_update_stages(config: Config):
     return [
         IngestStage(config),
@@ -100,6 +105,9 @@ def test_unmounted_volume_fails_with_a_clear_message(config_path: Path):
         (["ingest"], ["originals_root"]),
         (["run", "embed"], ["derivatives_root"]),
         (["verify"], ["originals_root"]),
+        (["upload"], ["originals_root"]),
+        (["evict", "--dry-run"], ["originals_root"]),
+        (["fetch", "a.jpg"], ["originals_root"]),
     ],
 )
 def test_commands_that_need_the_drive_stop_first(config_path: Path, command, keys):
@@ -144,7 +152,7 @@ def test_update_imports_then_indexes(config: Config, conn):
     photo(config.inboxes[0] / "a.jpg")
     photo(config.inboxes[0] / "b.jpg", color="blue")
 
-    result = update(config, conn, fake_update_stages(config))
+    result = update(config, conn, fake_update_stages(config), UploadResult)
 
     assert len(result.imported.imported) == 2
     assert result.stages == {
@@ -157,7 +165,7 @@ def test_update_imports_then_indexes(config: Config, conn):
         conn.execute("SELECT COUNT(*) FROM stage_status WHERE stage = 'caption'").fetchone()[0] == 0
     )
 
-    again = update(config, conn, fake_update_stages(config))
+    again = update(config, conn, fake_update_stages(config), UploadResult)
     assert again.imported.imported == []
     assert all(c == {"done": 0, "failed": 0} for c in again.stages.values())
 
@@ -167,7 +175,7 @@ def test_update_stops_before_anything_without_the_drive(config_path: Path):
     inbox_file = photo(config.inboxes[0] / "a.jpg")
     conn = connect(config)
     with pytest.raises(DriveNotMounted):
-        update(config, conn, fake_update_stages(config))
+        update(config, conn, fake_update_stages(config), never_called)
     assert inbox_file.exists()
     assert conn.execute("SELECT COUNT(*) FROM images").fetchone()[0] == 0
     conn.close()
@@ -179,6 +187,9 @@ def test_update_cli_reports_each_step(config_path: Path, config: Config):
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == [
         "import: 0 imported, 0 duplicates, 0 skipped (too new), 0 failed",
+        # The test Keychain item never exists, so the upload step reports why it didn't run.
+        "upload: not run: no encryption key in the Keychain (imgsearch-test-no-such-item);"
+        " run `imgsearch s3-key create` once; 0 originals not yet in S3",
         "ingest: 0 processed (0 done, 0 failed)",
         "embed: 0 processed (0 done, 0 failed)",
         "ocr: 0 processed (0 done, 0 failed)",
@@ -192,7 +203,7 @@ def test_verify_checks_originals_by_hash_and_files_exist(config_path: Path, conf
     photo(config.inboxes[0] / "a.jpg")
     photo(config.inboxes[0] / "b.jpg", color="blue")
     photo(config.inboxes[0] / "c.jpg", color="green")
-    update(config, conn, fake_update_stages(config))
+    update(config, conn, fake_update_stages(config), UploadResult)
     assert run(config_path, "verify").output.splitlines() == ["verify: 3 of 3 images ok"]
 
     by_name = {Path(r["orig_relpath"]).name: r for r in conn.execute("SELECT * FROM images")}

@@ -89,3 +89,22 @@ search:
 eval:
   queries: eval/queries.yaml   # the labelled query set
   runs_dir: eval/runs          # one folder per run; git-ignored (personal photos)
+
+# Originals' primary home (plan D19, P1.6): S3 Glacier Instant Retrieval, encrypted on the Mac
+# (AES-256-GCM; the key is in the macOS Keychain). The bucket name and the AWS profile come
+# from .env (git-ignored; see .env.example); credentials stay in ~/.aws/.
+s3:
+  bucket: "${IMGSEARCH_S3_BUCKET}"
+  profile: "${AWS_PROFILE}"
+  region: ap-south-1
+  storage_class: GLACIER_IR
+  originals_prefix: originals/       # objects are originals/<image id>: no names or dates
+  db_key: db/imgsearch.sqlite.enc    # encrypted DB copy; bucket versioning keeps older ones
+  keychain_service: imgsearch-s3     # Keychain item holding the encryption key
+  keychain_account: encryption-key
+
+# The pen drive is a least-recently-used cache of originals. `imgsearch evict` removes the
+# least recently used ones (only those with a verified S3 copy) until their total size is
+# under this cap. Sizes are file sizes; exFAT adds ~8% on disk.
+storage:
+  cache_max_gb: 20

@@ -80,6 +80,21 @@ class EvalPaths(_Strict):
     runs_dir: Path
 
 
+class S3Config(_Strict):
+    bucket: str  # from IMGSEARCH_S3_BUCKET in .env
+    profile: str  # AWS profile in ~/.aws/, from AWS_PROFILE in .env
+    region: str
+    storage_class: str  # e.g. GLACIER_IR
+    originals_prefix: str  # object key = prefix + image id
+    db_key: str  # object key of the encrypted DB copy
+    keychain_service: str  # macOS Keychain item that holds the encryption key
+    keychain_account: str
+
+
+class StorageConfig(_Strict):
+    cache_max_gb: float  # `imgsearch evict` keeps the originals on the pen drive under this
+
+
 class Config(_Strict):
     originals_root: Path  # pen drive (plan D18); only `imgsearch import` adds files here
     derivatives_root: Path  # pen drive: 2048px derivatives
@@ -90,6 +105,8 @@ class Config(_Strict):
     stages: dict[str, str]  # stage name -> version
     search: SearchConfig
     eval: EvalPaths
+    s3: S3Config
+    storage: StorageConfig
 
     @field_validator("db_path")
     @classmethod
@@ -103,9 +120,10 @@ class Config(_Strict):
 def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_FILE) -> Config:
     """Read a config file.
 
-    In path fields, `${VAR}` is replaced from the environment, else from `env_file` (a
-    missing file is fine), and an unset variable is an error. Then `~` is expanded, and
-    relative paths resolve against the config file's folder.
+    In path fields and in `s3.bucket` and `s3.profile`, `${VAR}` is replaced from the
+    environment, else from `env_file` (a missing file is fine), and an unset variable is an
+    error. Then `~` is expanded in paths, and relative paths resolve against the config
+    file's folder.
     """
     path = path.resolve()
     env = {**dotenv_values(env_file), **os.environ}  # real environment variables win
@@ -122,6 +140,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_F
     for key in ("queries", "runs_dir"):
         if key in data.get("eval", {}):
             data["eval"][key] = resolve(data["eval"][key])
+    for key in ("bucket", "profile"):  # account-specific names live in .env, not the repo
+        if key in data.get("s3", {}):
+            data["s3"][key] = expand_vars(data["s3"][key], env)
     return Config.model_validate(data)
 
 

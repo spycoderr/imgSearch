@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from imgsearch.commands import evaluate, index, query
+from imgsearch.commands import cloud, evaluate, index, query
 from imgsearch.commands.index import STAGES
 from imgsearch.config import DEFAULT_CONFIG_PATH, load_config
 
@@ -39,3 +39,8 @@ app.command("eval-review")(evaluate.eval_review)
 app.command("import")(index.import_command)
 app.command("update")(index.update_command)
 app.command("verify")(index.verify_command)
+app.command("upload")(cloud.upload_command)
+app.command("evict")(cloud.evict_command)
+app.command("fetch")(cloud.fetch_command)
+app.command("restore-check")(cloud.restore_check_command)
+app.add_typer(cloud.key_app, name="s3-key")

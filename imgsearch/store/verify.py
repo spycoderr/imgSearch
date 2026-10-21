@@ -1,7 +1,9 @@
 """Check every image's files: the original by hash, the derivative and thumbnail by decoding.
 
-The original's SHA-256 must equal the image id. Derivatives and thumbnails have no stored
-hash, so each must exist and decode as a complete image.
+The original's SHA-256 must equal the image id. An original evicted from the pen drive
+(P1.6) is not checked here: it is in S3, verified at upload and re-checked by `fetch`.
+Derivatives and thumbnails have no stored hash, so each must exist and decode as a complete
+image.
 """
 
 import sqlite3
@@ -17,16 +19,21 @@ from imgsearch.sources.importer import sha256_file
 class VerifyResult:
     images: int = 0
     ok: int = 0
+    evicted: int = 0  # originals in S3 only; their derivative and thumbnail are still checked
     problems: list[tuple[str, str]] = field(default_factory=list)  # (orig_relpath, problem)
 
 
 def verify(config: Config, conn: sqlite3.Connection) -> VerifyResult:
     result = VerifyResult()
     rows = conn.execute(
-        "SELECT id, orig_relpath, derivative_path, thumb_path FROM images ORDER BY orig_relpath"
+        "SELECT i.id, i.orig_relpath, i.derivative_path, i.thumb_path,"
+        " c.evicted_at IS NOT NULL AS evicted"
+        " FROM images i LEFT JOIN original_cache c ON c.image_id = i.id"
+        " ORDER BY i.orig_relpath"
     ).fetchall()
     for row in rows:
         result.images += 1
+        result.evicted += row["evicted"]
         problems = _check(config, row)
         result.problems += [(row["orig_relpath"], p) for p in problems]
         if not problems:
@@ -37,10 +44,11 @@ def verify(config: Config, conn: sqlite3.Connection) -> VerifyResult:
 def _check(config: Config, row: sqlite3.Row) -> list[str]:
     problems = []
     original = config.originals_root / row["orig_relpath"]
-    if not original.is_file():
-        problems.append(f"original missing: {original}")
-    elif sha256_file(original) != row["id"]:
-        problems.append(f"original changed (sha256 differs from the id): {original}")
+    if not row["evicted"]:
+        if not original.is_file():
+            problems.append(f"original missing: {original}")
+        elif sha256_file(original) != row["id"]:
+            problems.append(f"original changed (sha256 differs from the id): {original}")
     for kind, root, relpath in (
         ("derivative", config.derivatives_root, row["derivative_path"]),
         ("thumbnail", config.thumbs_root, row["thumb_path"]),

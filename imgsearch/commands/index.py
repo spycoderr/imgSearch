@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from imgsearch.commands.cloud import cloud_status_lines, run_upload, upload_lines
 from imgsearch.commands.common import need_drive, stage_failures, stage_line
 from imgsearch.config import Config
 from imgsearch.interfaces import Context
@@ -38,6 +39,7 @@ def status(ctx: typer.Context) -> None:
     conn = connect(config)
     total = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
     counts = status_counts(conn, config.stages)
+    cloud = cloud_status_lines(config, conn)
     conn.close()
 
     typer.echo(f"db: {config.db_path}")
@@ -52,6 +54,8 @@ def status(ctx: typer.Context) -> None:
         typer.echo(f"{stage:<10}" + "".join(f"{n:>9}" for n in cells))
     drive = "mounted" if is_available(config.originals_root) else "NOT MOUNTED"
     typer.echo(f"pen drive: {drive} (originals: {config.originals_root})")
+    for line in cloud:
+        typer.echo(line)
 
 
 def ingest(ctx: typer.Context) -> None:
@@ -125,23 +129,31 @@ def import_command(ctx: typer.Context) -> None:
 
 
 def update_command(ctx: typer.Context) -> None:
-    """Import the inboxes, then run ingest, embed and ocr. Captions are not run."""
+    """Import the inboxes, upload new originals to S3, then run ingest, embed and ocr.
+
+    Indexing still runs if the upload can't (offline). Captions are not run.
+    """
     config: Config = ctx.obj
     need_drive(config, "originals_root", "derivatives_root")
     stages = [cls(config) for cls in UPDATE_STAGES]
     with closing(connect(config)) as conn:
-        result = update(config, conn, stages)
+        result = update(config, conn, stages, lambda: run_upload(config, conn))
         failures = {stage.name: stage_failures(conn, stage.name) for stage in stages}
 
     for line in import_lines(result.imported):
         typer.echo(line)
     for path, error in result.imported.failed:
         typer.echo(f"  failed: {path}: {error}", err=True)
+    for line in upload_lines(result.uploaded, result.not_in_s3):
+        typer.echo(line)
+    for relpath, error in result.uploaded.failed:
+        typer.echo(f"  failed: {relpath}: {error}", err=True)
     for name, stage_counts in result.stages.items():
         typer.echo(stage_line(name, stage_counts))
         for relpath, error in failures[name]:
             typer.echo(f"  failed: {relpath}: {error}", err=True)
-    if result.imported.failed or any(failures.values()):
+    # Offline is not an error here: the originals are uploaded on a later run.
+    if result.imported.failed or result.uploaded.failed or any(failures.values()):
         raise typer.Exit(1)
 
 
@@ -153,6 +165,7 @@ def verify_command(ctx: typer.Context) -> None:
         result = verify(config, conn)
     for relpath, problem in result.problems:
         typer.echo(f"  {relpath}: {problem}", err=True)
-    typer.echo(f"verify: {result.ok} of {result.images} images ok")
+    evicted = f" ({result.evicted} originals evicted to S3, not checked)" if result.evicted else ""
+    typer.echo(f"verify: {result.ok} of {result.images} images ok{evicted}")
     if result.problems:
         raise typer.Exit(1)
