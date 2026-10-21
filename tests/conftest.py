@@ -137,7 +137,7 @@ def store() -> FakeObjectStore:
 
 # ---- chat bot (P3): a small library with files, and searchers with fake retrievers ----
 
-CHAT_IDS = [f"img{n:02d}" for n in range(1, 13)]  # 12 images
+CHAT_IDS = [f"img{n:02d}" for n in range(1, 23)]  # 22 images
 
 
 class FakeRewriter:

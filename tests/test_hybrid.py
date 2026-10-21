@@ -77,6 +77,15 @@ def fake_searcher(conn, config: Config, rewriter=None, **retrievers) -> Searcher
     return Searcher(conn, config.search, rewriter or FakeRewriter(), retrievers)
 
 
+def test_k_over_per_retriever_k_asks_each_retriever_for_k(images, config: Config):
+    vector = FakeRetriever("vector", "dog", "cat", "sign", "menu")
+    searcher = fake_searcher(images, config, FakeRewriter(), vector=vector)
+    assert config.search.per_retriever_k == 10
+    searcher.search(QUERY)  # default k: lists stay per_retriever_k long
+    searcher.search(QUERY, k=20)
+    assert [k for _, k in vector.calls] == [10, 20]
+
+
 def test_query_flow(images, config: Config):
     rewriter = FakeRewriter()
     vector = FakeRetriever("vector", "cat", "dog", "menu")

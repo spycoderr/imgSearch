@@ -54,7 +54,8 @@ NO_MORE = "No more photos for that search."
 NO_DRIVE = "The pen drive isn't plugged in, so originals are unavailable."
 NOT_FETCHABLE = "That original isn't on the pen drive and couldn't be fetched from S3 right now."
 
-_ORIGINAL = re.compile(r"original\s+(\d+)")
+# "original 2", "Original 2.", "original2", "orig 2", "original #2".
+_ORIGINAL = re.compile(r"orig(?:inal)?\s*#?\s*(\d+)")
 # "10 photos", "3 pics", "५ तस्वीरें", or "top 10": how many photos the user wants.
 _COUNT = re.compile(
     r"(?<!\d)(\d{1,2})\s*(?:photos?|images?|pics?|pictures?|snaps?|tasveer\w*|फ़ोटो|फोटो|तस्वीर\w*|चित्र)"
@@ -118,7 +119,7 @@ class ChatBot:
 
     def on_message(self, text: str, sender: str) -> None:
         """Reply to one text message. A failure becomes a short apology, never a traceback."""
-        command = " ".join(text.lower().split()).removeprefix("/")
+        command = " ".join(text.lower().split()).removeprefix("/").rstrip(".!?")
         try:
             if command in ("help", "start"):
                 self.messenger.send_text(sender, HELP)

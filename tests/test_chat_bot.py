@@ -193,8 +193,11 @@ def test_more_pages_through_the_last_search(bot, messenger, config):
     first, second = messenger.albums()
     assert [c.split(" · ")[0] for _, c in second] == ["6", "7", "8", "9", "10"]
     assert second[0][0] == config.derivatives_root / "img06.jpg"
-    # The fake retriever, like the real ones, returns at most search.per_retriever_k (10).
+    # The search kept chat.max_results (20) of the 22 images: two more pages, then none.
     bot.on_message("/more", CHAT)
+    bot.on_message("more", CHAT)
+    assert [c.split(" · ")[0] for _, c in messenger.albums()[3]] == ["16", "17", "18", "19", "20"]
+    bot.on_message("more", CHAT)
     assert messenger.texts() == [NO_MORE]
 
 
@@ -217,12 +220,13 @@ def test_requested_count(text, count):
     assert requested_count(text, 20) == count
 
 
-def test_asking_for_ten_sends_ten_and_more_pages_by_ten(bot, messenger, config):
+def test_asking_for_ten_sends_ten_and_more_pages_by_ten(bot, messenger):
     bot.on_message("give me 10 images of my pet dog", CHAT)
-    [album] = messenger.albums()
-    assert len(album) == 10
-    assert album[9][1].startswith("10 · ")
-    bot.on_message("more", CHAT)  # the search returned 10 (per_retriever_k): none left
+    bot.on_message("more", CHAT)  # the search keeps chat.max_results (20): ranks 11-20
+    first, second = messenger.albums()
+    assert len(first) == 10 and first[9][1].startswith("10 · ")
+    assert [c.split(" · ")[0] for _, c in second] == [str(n) for n in range(11, 21)]
+    bot.on_message("more", CHAT)
     assert messenger.texts() == [NO_MORE]
 
 
@@ -314,7 +318,7 @@ def test_logs_hold_no_text_chat_or_paths(bot, messenger, caplog):
     with caplog.at_level(logging.DEBUG):
         bot.on_message(QUERY, CHAT)
         bot.on_message("original 1", CHAT)
-    assert "search: 10 results" in caplog.text
+    assert "search: 20 results" in caplog.text
     for private in (QUERY, CHAT, "IMG_0001", "img01"):
         assert private not in caplog.text
 
@@ -331,10 +335,14 @@ def test_original_sends_the_file_as_a_document(bot, messenger, config):
     assert messenger.kinds()[-2:] == ["upload_document", "document"]
 
 
-def test_original_slash_command(bot, messenger):
+@pytest.mark.parametrize(
+    "command", ["/original 1", "Original 1.", "original1", "orig 1", "original #1", "ORIGINAL 1!"]
+)
+def test_original_command_variants(bot, messenger, command):
     bot.on_message(QUERY, CHAT)
-    bot.on_message("/original 1", CHAT)
+    bot.on_message(command, CHAT)
     assert len(messenger.documents()) == 1
+    assert bot.searcher.get().rewriter.queries == [QUERY]  # not searched as a query
 
 
 def test_original_number_must_be_among_the_shown_results(bot, messenger):

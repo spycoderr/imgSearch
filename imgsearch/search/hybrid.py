@@ -81,13 +81,17 @@ class Searcher:
         q = self.rewriter.rewrite(query) if rewrite else ParsedQuery(english=query, original=query)
         rewritten = time.perf_counter()
 
+        k = k or self.config.top_k
+        # Each retriever's list is per_retriever_k long, or k when more results are asked for
+        # (the chat bot's `more`), so a search can return k results.
+        depth = max(self.config.per_retriever_k, k)
         date_range = q.date_range if date_filter else None
-        fused = self._fuse(replace(q, date_range=date_range), names)
+        fused = self._fuse(replace(q, date_range=date_range), names, depth)
         fallback = not fused and date_range is not None
         if fallback:
             date_range = None
-            fused = self._fuse(replace(q, date_range=None), names)
-        fused = fused[: k or self.config.top_k]
+            fused = self._fuse(replace(q, date_range=None), names, depth)
+        fused = fused[:k]
         rows = image_rows(self.conn, [f.image_id for f in fused])
         results = [
             Result(
@@ -112,10 +116,8 @@ class Searcher:
             date_fallback=fallback,
         )
 
-    def _fuse(self, q: ParsedQuery, names: tuple[str, ...]) -> list[Fused]:
-        rankings = [
-            self.retrievers[name].retrieve(q, self.config.per_retriever_k) for name in names
-        ]
+    def _fuse(self, q: ParsedQuery, names: tuple[str, ...], depth: int) -> list[Fused]:
+        rankings = [self.retrievers[name].retrieve(q, depth) for name in names]
         return rrf_fuse(rankings, self.config.rrf_k, self.config.signal_weights)
 
 
