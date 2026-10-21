@@ -488,7 +488,9 @@ reads originals, so evicted photos are still found; `fetch` brings one back in a
 
 **Setup (already done for this Mac).** A private bucket in `ap-south-1` with versioning,
 Block Public Access and a lifecycle rule that expires old versions after 90 days. An IAM user
-whose key can only put, get and head objects in that bucket: it can't delete objects or change
+whose key can only put, get and head objects in that bucket (`s3:PutObject`, `s3:GetObject`
+and `s3:GetObjectVersion`; the last is needed because upload, `fetch` and `restore-check` read
+an exact version, and without it those requests return 403): it can't delete objects or change
 versioning, so the code never deletes from S3, and re-uploading a key adds a new version. The
 key is in `~/.aws/` under the profile named by `AWS_PROFILE`; the bucket name is
 `IMGSEARCH_S3_BUCKET`. Both are in `.env`, so no committed file names them.
