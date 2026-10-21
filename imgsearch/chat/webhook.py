@@ -105,7 +105,7 @@ def create_app(secrets: Secrets, worker: Worker, status: Callable[[], dict[str, 
                 repeated += 1
             else:
                 worker.submit(message)
-                log.info("message %s queued (%s)", log_id(message.message_id), message.kind)
+                log.info("message %s queued (%s)", message.log_id, message.kind)
         if not_allowed or repeated:
             log.info("webhook: %d from senders not allowed, %d repeated", not_allowed, repeated)
         return Response(status_code=200)

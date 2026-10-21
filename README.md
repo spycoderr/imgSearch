@@ -29,6 +29,7 @@ named next to them.
 | P1.6 | Originals encrypted in S3 Glacier Instant Retrieval; pen drive as an LRU cache: `upload`, `evict`, `fetch` | done |
 | P1.7 | File names and phone folders as search text, date filtering, weighted RRF, `backfill` | done (eval in `docs/eval/baseline-p1.7.md`) |
 | P3 | WhatsApp bot (official Cloud API): `imgsearch serve` | phase A (code and tests) done; phase B (real messages) pending |
+| P3 | Chat bot: `imgsearch bot` on Telegram (P3-T); WhatsApp built but parked (Meta account locked) | Telegram phase A (code and tests) done; phase B (real messages) pending |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -633,37 +634,109 @@ expression is in `imgsearch/store/dates.py`. See "Search (M5)" and "Query rewrit
 how a query's date becomes a filter.
 
 ## WhatsApp bot (P3)
+## Chat bot (P3)
 
-Search from your phone: send a WhatsApp message to the bot's number and it replies with the
-best matching photos. It uses the official WhatsApp Cloud API (plan D13) and Meta's free test
-number. Only numbers you allow get a reply.
+Search from your phone: message the bot and it replies with the best matching photos.
+**Telegram** is the active chat app (plan D13). WhatsApp is built too but parked: Meta keeps
+the business account locked (`docs/reports/P3.md`); see "WhatsApp (parked)" below.
+`chat.adapter` in `config.yaml` picks the app, and `imgsearch bot` runs it.
 
 ```
-phone -> WhatsApp -> Meta -> Cloudflare Tunnel (public HTTPS) -> imgsearch serve (127.0.0.1:8765)
-                                                                     -> search() -> photos back
+phone -> Telegram <- long polling (getUpdates) <- imgsearch bot on the Mac -> search() -> photos back
 ```
+
+The Mac asks Telegram for new messages (long polling), so there is no webhook, no public URL
+and no open port.
 
 ### What it understands
 
 | Message | Reply |
 | --- | --- |
-| any text, e.g. `mummy ke saath beach pe` | The top 5 photos (`search.top_k`), each with "rank · date · short caption". Same search as `imgsearch search` (rewrite on, `search.default_signals`) |
-| `more` | The next 5 for your last search (up to `whatsapp.max_results`) |
-| `original N` | Photo N's original file, as a document, if it's on the pen drive or can be fetched from S3, and under `whatsapp.original_max_mb` |
-| `help` | The list above |
+| any text, e.g. `mummy ke saath beach pe` | The top 5 photos (`search.top_k`) as one album, each with "rank · date · short caption". Same search as `imgsearch search` (rewrite on, `search.default_signals`) |
+| `more` | The next 5 for your last search (up to `chat.max_results`) |
+| `original N` | Photo N's original file, as a document, if it's on the pen drive or can be fetched from S3, and under the app's file limit (Telegram 50 MB, `telegram.original_max_mb`) |
+| `help`, `/start` | The list above |
 
-- Photos are sent as the resized derivative (never the original), uploaded to WhatsApp's media
-  endpoint and sent by media id, so there is no public link to any photo.
+Commands also work with a leading "/" (`/more`, `/original 2`).
+
+- Photos are the resized derivatives (never the originals) unless you ask for `original N`.
 - With the pen drive unplugged, it sends the thumbnails and says full-size images are
   unavailable.
-- If the rewrite fails it says so and searches the text as written. No results or an error
-  give a one-line reply.
-- SigLIP loads on the first message (a few seconds) and unloads after
-  `whatsapp.idle_unload_s` (5 min) without messages (D21). Ollama unloads the rewriter on its
-  own after 5 idle minutes. Searching needs about 7 GB, so don't use the bot during a caption
-  run.
+- "typing…" shows while it searches and "sending photo…" while it uploads, so a cold start
+  doesn't look dead.
+- If the rewrite fails it says so and searches the text as written. If a date in the query
+  matches no photos, it says so and shows photos from any date. No results or an error give
+  a one-line reply.
+- SigLIP loads on the first message (a few seconds) and unloads after `chat.idle_unload_s`
+  (5 min) without messages (D21). Ollama unloads the rewriter on its own after 5 idle
+  minutes. Searching needs about 7 GB, so don't use the bot during a caption run.
 
-### One-time Meta setup
+### Telegram setup (once)
+
+1. In Telegram, open **@BotFather**:
+   - `/newbot`: choose a name and a username (ending in `bot`). BotFather replies with the
+     **token**.
+   - `/setjoingroups` → choose the bot → **Disable**, so nobody can add it to a group.
+   - `/setprivacy` → choose the bot → **Enable** (the default), so it would only see
+     commands even in a group.
+2. Put the token in `.env` (git-ignored; see `.env.example`):
+   ```
+   TELEGRAM_BOT_TOKEN=123456789:AA...
+   ```
+3. From your phone, open the bot (t.me/<its username>) and send it any message. Then find your
+   numeric user id:
+   ```sh
+   uv run imgsearch telegram whoami     # user id 123456789: Your Name (@you), private chat
+   ```
+   It only reads the waiting messages (they aren't marked read) and prints here; nothing is
+   logged.
+4. Allow your id (numeric ids; usernames can change), comma-separated for more people:
+   ```
+   TELEGRAM_ALLOWED_USER_IDS=123456789
+   ```
+   Messages from anyone else, and from any group or channel, are ignored with no reply; the
+   log counts them by reason only.
+
+### Running it
+
+```sh
+uv run imgsearch bot          # polls until Ctrl-C; finishes queued messages before exiting
+```
+
+To start it at login, use the launchd template `docs/launchd/com.imgsearch.bot.plist`:
+
+```sh
+mkdir -p data/logs
+# edit the copy: replace PROJECT_DIR (this folder) and UV_PATH (output of `which uv`)
+cp docs/launchd/com.imgsearch.bot.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.imgsearch.bot.plist
+launchctl bootout gui/$(id -u)/com.imgsearch.bot      # to stop it and remove it from login
+```
+
+The log is `data/logs/bot.log`.
+
+### Security and privacy
+
+- Only private chats from the numeric ids in `TELEGRAM_ALLOWED_USER_IDS` get a reply.
+- The bot token is part of every Bot API URL, so request URLs are never logged and error
+  text has the token replaced by `<token>`.
+- Logs hold update ids (`u12345`), counts and timings only: no message text, user ids, names,
+  file names or photos.
+- Network errors back off and retry (1 s, doubling to 60 s); Telegram's rate limit (429) is
+  retried after the wait Telegram asks for. A wrong token stops the bot with an error.
+- **Bot chats are Telegram cloud chats, not end-to-end encrypted.** The photos the bot sends
+  are stored on Telegram's servers, as WhatsApp sends would be on Meta's. Only resized
+  derivatives are sent unless you ask for `original N`.
+
+### WhatsApp (parked)
+
+The WhatsApp Cloud API adapter is kept, unused, behind `chat.adapter: whatsapp`. It needs a
+Meta business account that can send; ours stays locked (error 131031) after the business
+profile and a payment method were added, so only business verification or Meta support is
+left (`docs/reports/P3.md`). It runs a webhook server on 127.0.0.1 that a tunnel makes
+public, checks Meta's signature on every call and allows listed phone numbers only.
+
+#### One-time Meta setup
 
 1. At [developers.facebook.com](https://developers.facebook.com/), create an app (type
    Business) and add the **WhatsApp** product. It comes with a free test number.
@@ -702,7 +775,7 @@ phone -> WhatsApp -> Meta -> Cloudflare Tunnel (public HTTPS) -> imgsearch serve
 
    The WABA id is on the API Setup page (WhatsApp Business Account ID).
 
-### The tunnel
+#### The tunnel
 
 Meta needs a public HTTPS URL; the bot only listens on 127.0.0.1. **Tailscale Funnel** (used
 in P3) gives the Mac a fixed public name, `https://<machine>.<tailnet>.ts.net`, with no port
@@ -730,27 +803,21 @@ Cloudflare Tunnel also works (`cloudflared tunnel --url http://127.0.0.1:8765` f
 random URL; a named tunnel on your own domain for a fixed one, with an ingress rule `path:
 ^/webhook$`).
 
-### Running it
+#### Running it
+
+Set `chat.adapter: whatsapp` in `config.yaml`, then:
 
 ```sh
-uv run imgsearch serve                    # listens on 127.0.0.1:8765 (whatsapp.port)
+uv run imgsearch bot                      # listens on 127.0.0.1:8765 (whatsapp.port)
 curl http://127.0.0.1:8765/health         # {"status": "ok", "models_loaded": false, "queued": 0}
 ```
 
 `/health` answers on the Mac only: a request that came through the tunnel gets 404. There
 are no other routes: no docs pages, no files.
 
-To start it at login, use the launchd template `docs/launchd/com.imgsearch.serve.plist`:
+The launchd template above runs it too (`imgsearch bot` follows `chat.adapter`).
 
-```sh
-mkdir -p data/logs
-# edit the copy: replace PROJECT_DIR (this folder) and UV_PATH (output of `which uv`)
-cp docs/launchd/com.imgsearch.serve.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.imgsearch.serve.plist
-launchctl bootout gui/$(id -u)/com.imgsearch.serve      # to stop it and remove it from login
-```
-
-### Security and privacy
+#### Security and privacy
 
 - The webhook rejects any `POST` without a valid `X-Hub-Signature-256` (HMAC-SHA256 of the
   body with the app secret, compared in constant time) with 401.
@@ -759,5 +826,5 @@ launchctl bootout gui/$(id -u)/com.imgsearch.serve      # to stop it and remove 
   and searches in the background.
 - Logs hold hashed message ids (`m-` + 10 hex digits; a raw WhatsApp id contains the phone
   number), counts, timings and delivery statuses with Meta's error code and title only: no
-  message text, phone numbers, file names or photos. The HTTP access log is off, because the verification request carries the verify
-  token in its URL.
+  message text, phone numbers, file names or photos. The HTTP access log is off, because the
+  verification request carries the verify token in its URL.

@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from dotenv import dotenv_values
 
+from imgsearch.chat.env import read_env, split_list
+from imgsearch.chat.service import Incoming
 from imgsearch.config import DEFAULT_ENV_FILE, WhatsAppConfig
 
 log = logging.getLogger(__name__)
@@ -44,11 +45,8 @@ def load_secrets(
     env_file: Path = DEFAULT_ENV_FILE, environ: Mapping[str, str] = os.environ
 ) -> Secrets:
     """Read the WhatsApp secrets from the environment, else from `env_file`."""
-    env = {**dotenv_values(env_file), **environ}
-    missing = [key for key in SECRET_KEYS if not env.get(key)]
-    if missing:
-        raise ValueError(f"{', '.join(missing)} not set: put them in .env (see .env.example)")
-    senders = frozenset(digits(n) for n in env["WHATSAPP_ALLOWED_SENDERS"].split(",") if digits(n))
+    env = read_env(SECRET_KEYS, env_file, environ)
+    senders = frozenset(digits(n) for n in split_list(env["WHATSAPP_ALLOWED_SENDERS"]) if digits(n))
     if not senders:
         raise ValueError("WHATSAPP_ALLOWED_SENDERS has no phone numbers")
     return Secrets(
@@ -73,23 +71,13 @@ def signature_ok(app_secret: str, body: bytes, header: str | None) -> bool:
     return hmac.compare_digest(expected.encode(), header.removeprefix("sha256=").encode())
 
 
-@dataclass(frozen=True)
-class Incoming:
-    """One message from a webhook payload."""
-
-    message_id: str
-    sender: str = field(repr=False)  # the sender's WhatsApp id: phone number digits
-    kind: str  # "text", "image", "audio", ...
-    text: str | None = field(repr=False)  # the body of a text message
-
-
 def incoming_messages(payload: Mapping[str, Any], phone_number_id: str) -> list[Incoming]:
     """The messages in a webhook payload sent to our number."""
     found = []
     for value in _values(payload, phone_number_id):
         for m in value.get("messages", []):
             text = m["text"]["body"] if m["type"] == "text" else None
-            found.append(Incoming(m["id"], m["from"], m["type"], text))
+            found.append(Incoming(m["id"], log_id(m["id"]), m["from"], m["type"], text))
     return found
 
 
@@ -134,7 +122,7 @@ class GraphError(Exception):
 
 
 class GraphClient:
-    """Uploads media and sends messages from our business number."""
+    """A `Messenger` for WhatsApp: uploads media and sends messages from our business number."""
 
     def __init__(
         self, config: WhatsAppConfig, secrets: Secrets, client: httpx.Client | None = None
@@ -146,10 +134,18 @@ class GraphClient:
     def send_text(self, to: str, text: str) -> None:
         self._send(to, "text", {"body": text})
 
+    def send_photos(self, to: str, photos: list[tuple[Path, str]]) -> None:
+        """One image message per photo (WhatsApp has no albums in the API)."""
+        for path, caption in photos:
+            self.send_image(to, path, caption)
+
     def send_image(self, to: str, path: Path, caption: str) -> None:
         """Upload a JPEG and send it by media id (no public link to the photo)."""
         media_id = self.upload(path, "image/jpeg")
         self._send(to, "image", {"id": media_id, "caption": caption})
+
+    def show_activity(self, to: str, action: str) -> None:
+        """WhatsApp's Cloud API has no typing indicator outside a reply to a message id."""
 
     def send_document(self, to: str, path: Path, filename: str, caption: str) -> None:
         mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"

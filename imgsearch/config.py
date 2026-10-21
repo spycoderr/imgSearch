@@ -139,15 +139,28 @@ class StorageConfig(_Strict):
     cache_max_gb: float  # `imgsearch evict` keeps the originals on the pen drive under this
 
 
+class ChatConfig(_Strict):
+    """The chat bot (P3, D13), whichever app it runs on. Secrets come from .env."""
+
+    adapter: Literal["telegram", "whatsapp"]  # which chat app `imgsearch bot` runs
+    max_results: int  # results kept per chat, so `more` can page through them
+    idle_unload_s: float  # unload SigLIP after this long without a message (D21)
+
+
+class TelegramConfig(_Strict):
+    api_url: str  # Bot API base URL
+    poll_timeout_s: int  # long-poll wait in getUpdates
+    timeout_s: float  # per request; must exceed poll_timeout_s; uploads included
+    original_max_mb: float  # `original N` refuses files over this (Bot API upload limit: 50 MB)
+
+
 class WhatsAppConfig(_Strict):
-    """The WhatsApp bot (P3). Secrets are not here: they come from .env (see .env.example)."""
+    """Parked: the Meta business account is locked (docs/reports/P3.md)."""
 
     graph_url: str  # Graph API base URL
     api_version: str  # e.g. v26.0
-    port: int  # `imgsearch serve` listens on 127.0.0.1 at this port; the tunnel forwards to it
+    port: int  # the webhook server listens on 127.0.0.1 at this port; a tunnel forwards to it
     timeout_s: float  # per Graph API request; uploads included
-    max_results: int  # results kept per sender, so `more` can page through them
-    idle_unload_s: float  # unload SigLIP after this long without a message (D21)
     original_max_mb: float  # `original N` refuses files over this (document limit: 100 MB)
 
 
@@ -164,6 +177,8 @@ class Config(_Strict):
     s3: S3Config
     storage: StorageConfig
     syncthing: SyncthingConfig
+    chat: ChatConfig
+    telegram: TelegramConfig
     whatsapp: WhatsAppConfig
 
     @field_validator("db_path")

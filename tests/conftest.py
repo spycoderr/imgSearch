@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from imgsearch.config import DEFAULT_CONFIG_PATH, Config, load_config
-from imgsearch.interfaces import ObjectInfo, StoreUnavailable
+from imgsearch.interfaces import Candidate, ObjectInfo, ParsedQuery, StoreUnavailable
+from imgsearch.search.hybrid import Searcher
 from imgsearch.store.db import connect
+from imgsearch.store.text import save_caption
 
 # Every storage path points into the test's temp folder, never at the pen drive or data/.
 TEST_PATHS = """\
@@ -131,3 +133,76 @@ class FakeObjectStore:
 @pytest.fixture
 def store() -> FakeObjectStore:
     return FakeObjectStore()
+
+
+# ---- chat bot (P3): a small library with files, and searchers with fake retrievers ----
+
+CHAT_IDS = [f"img{n:02d}" for n in range(1, 13)]  # 12 images
+
+
+class FakeRewriter:
+    """Rewrites every query to the same English; records the queries."""
+
+    def __init__(self, error: str | None = None) -> None:
+        self.error = error
+        self.queries: list[str] = []
+
+    def rewrite(self, query: str) -> ParsedQuery:
+        self.queries.append(query)
+        return ParsedQuery(english="photo of a dog", original=query, rewrite_error=self.error)
+
+
+class FakeRetriever:
+    """Returns the given image ids in order, at most k of them."""
+
+    def __init__(self, *image_ids: str) -> None:
+        self.image_ids = image_ids
+
+    def retrieve(self, q: ParsedQuery, k: int) -> list[Candidate]:
+        return [
+            Candidate(image_id=i, rank=r, score=1.0 / r, signal="vector")
+            for r, i in enumerate(self.image_ids[:k], start=1)
+        ]
+
+
+@pytest.fixture
+def chat_library(config: Config, conn: sqlite3.Connection) -> sqlite3.Connection:
+    """CHAT_IDS with a derivative, a thumbnail and an original file each. Image n is dated
+    2024-05-n (taken_at); img01 has a caption. File contents name the file kind and id."""
+    for n, image_id in enumerate(CHAT_IDS, start=1):
+        with conn:
+            conn.execute(
+                "INSERT INTO images (id, orig_relpath, derivative_path, thumb_path, taken_at,"
+                " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    image_id,
+                    f"2024/IMG_{n:04d}.HEIC",
+                    f"{image_id}.jpg",
+                    f"{image_id}.jpg",
+                    f"2024-05-{n:02d}T10:00:00",
+                    "2026-10-20T00:00:00+00:00",
+                ),
+            )
+        for path, kind in (
+            (config.derivatives_root / f"{image_id}.jpg", "derivative"),
+            (config.thumbs_root / f"{image_id}.jpg", "thumbnail"),
+            (config.originals_root / f"2024/IMG_{n:04d}.HEIC", "original"),
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"{kind} bytes of {image_id}".encode())
+    save_caption(conn, "img01", "A brown dog sleeping on a sofa.", "m")
+    return conn
+
+
+@pytest.fixture
+def make_searcher(config: Config) -> Callable[..., Searcher]:
+    """make(conn, rewrite_error=None, image_ids=CHAT_IDS): a Searcher with FakeRewriter
+    (as `.rewriter`) and one FakeRetriever, under the "vector" signal."""
+
+    def make(
+        conn: sqlite3.Connection, rewrite_error: str | None = None, image_ids=CHAT_IDS
+    ) -> Searcher:
+        retrievers = {"vector": FakeRetriever(*image_ids)}
+        return Searcher(conn, config.search, FakeRewriter(rewrite_error), retrievers)
+
+    return make

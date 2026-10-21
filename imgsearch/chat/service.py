@@ -14,11 +14,22 @@ import threading
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
-from imgsearch.chat.whatsapp import Incoming, log_id
 from imgsearch.search.hybrid import Searcher
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Incoming:
+    """One message from a chat app, already checked against the allowlist."""
+
+    message_id: str  # the app's id, for de-duplication
+    log_id: str  # what logs may show: a Telegram update id, a hash of a WhatsApp id
+    sender: str = field(repr=False)  # where to reply: Telegram chat id, WhatsApp number
+    kind: str  # "text", or the app's name for another kind ("image", "other", ...)
+    text: str | None = field(repr=False)  # the body of a text message
 
 
 class LazySearcher:
@@ -103,7 +114,7 @@ class Worker:
                 self.handle(message)
                 log.info(
                     "message %s handled in %.2fs",
-                    log_id(message.message_id),
+                    message.log_id,
                     time.perf_counter() - start,
                 )
             except Exception as e:  # one failed message must not stop the bot
