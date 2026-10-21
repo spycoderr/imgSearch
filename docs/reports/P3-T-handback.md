@@ -41,3 +41,13 @@ Telegram adapter is the shared `ChatBot` with `TelegramClient`, the same way Wha
 2. Message the bot from your phone.
 3. Then I merge `p3` into `main`, run `whoami` with you, and do the real check: the
    queries, `more`, `original 1`, a second account, latency and RAM.
+
+## Before the phase B merge: deterministic thread tests (2026-10-21)
+
+**Fixed: no bot test waits on the clock any more.**
+- The worker's loop is now `Worker.step()`, which the tests call directly. An empty queue
+  counts as idle at once.
+- The WhatsApp webhook test waits on a gate with no timeout, reopened in a `finally`.
+- An unused timed gate in the Telegram tests is gone.
+- **Results:** 453 tests. 10 full-suite runs in a row: 10/10 passed. 20 runs of the chat
+  tests with all 10 cores busy: 20/20 passed.
