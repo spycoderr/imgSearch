@@ -12,7 +12,7 @@ from imgsearch.eval.main import evaluate
 from imgsearch.eval.queries import EvalQuery
 from imgsearch.eval.run import (
     ABLATIONS,
-    OCR_ONLY,
+    NO_CAPTIONS,
     CachedRewriter,
     load_metrics,
     metrics_by_config,
@@ -70,7 +70,7 @@ def fake_build(retrievers: dict | None = None):
         parts = retrievers or {
             "vector": FakeRetriever("vector", "dog", "cat"),
             "text": FakeRetriever("text", "sign", "dog"),
-            OCR_ONLY: FakeRetriever("text", "sign"),
+            NO_CAPTIONS: FakeRetriever("text", "sign"),
         }
         return Searcher(conn, config.search, rewriter, parts), rewriter
 
@@ -81,7 +81,7 @@ def test_run_eval_covers_every_ablation(library, config: Config):
     vector = FakeRetriever("vector", "dog", "cat")
     text = FakeRetriever("text", "sign", "dog")
     ocr = FakeRetriever("text", "sign")
-    searcher, rewriter = fake_build({"vector": vector, "text": text, OCR_ONLY: ocr})(
+    searcher, rewriter = fake_build({"vector": vector, "text": text, NO_CAPTIONS: ocr})(
         config, library
     )
     records = run_eval(searcher, QUERIES)

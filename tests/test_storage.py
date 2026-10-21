@@ -14,6 +14,7 @@ from imgsearch.cli import app
 from imgsearch.config import Config, EmbedderConfig, load_config
 from imgsearch.stages.caption import CaptionStage
 from imgsearch.stages.embed import EmbedStage
+from imgsearch.stages.filename import FilenameStage
 from imgsearch.stages.ingest import IngestStage
 from imgsearch.stages.ocr import OcrStage
 from imgsearch.stages.update import UPDATE_STAGES, update
@@ -76,6 +77,7 @@ def fake_update_stages(config: Config):
         IngestStage(config),
         EmbedStage(config, make_embedder=FakeEmbedder),
         OcrStage(config, engine=FakeOCR()),
+        FilenameStage(config),
     ]
 
 
@@ -148,7 +150,7 @@ def test_search_says_nothing_when_the_drive_is_there(config_path: Path, conn, ad
 
 
 def test_update_runs_import_ingest_embed_ocr_without_captions():
-    assert [cls.name for cls in UPDATE_STAGES] == ["ingest", "embed", "ocr"]
+    assert [cls.name for cls in UPDATE_STAGES] == ["ingest", "embed", "ocr", "filename"]
     assert CaptionStage not in UPDATE_STAGES
 
 
@@ -163,8 +165,17 @@ def test_update_imports_then_indexes(config: Config, conn):
         "ingest": {"done": 2, "failed": 0},
         "embed": {"done": 2, "failed": 0},
         "ocr": {"done": 2, "failed": 0},
+        "filename": {"done": 2, "failed": 0},
     }
     assert conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0] == 2
+    # The inbox name and the file's date are recorded, and the name is searchable.
+    assert sorted(
+        tuple(r)
+        for r in conn.execute(
+            "SELECT i.source_relpath, f.text FROM images i"
+            " JOIN text_fts f ON f.image_id = i.id AND f.kind = 'filename'"
+        )
+    ) == [("a.jpg", ""), ("b.jpg", "")]
     assert (
         conn.execute("SELECT COUNT(*) FROM stage_status WHERE stage = 'caption'").fetchone()[0] == 0
     )
@@ -197,6 +208,7 @@ def test_update_cli_reports_each_step(config_path: Path, config: Config):
         "ingest: 0 processed (0 done, 0 failed)",
         "embed: 0 processed (0 done, 0 failed)",
         "ocr: 0 processed (0 done, 0 failed)",
+        "filename: 0 processed (0 done, 0 failed)",
     ]
 
 

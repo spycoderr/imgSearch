@@ -10,7 +10,7 @@ import yaml
 from typer.testing import CliRunner
 
 from imgsearch.cli import app
-from imgsearch.config import Config, RewriterConfig
+from imgsearch.config import Config, RewriterConfig, load_config
 from imgsearch.interfaces import ParsedQuery
 from imgsearch.models.rewriter import OUTPUT_SCHEMA, OllamaRewriter, mentions_date, system_prompt
 
@@ -125,18 +125,49 @@ def test_reason_names_the_error(config: Config):
 
 @pytest.mark.parametrize(
     "query",
-    ["chacha ki gaay 2019", "शादी २०१९", "photos from 15/08", "bday 3-4-21", "trip 1998"],
+    [
+        "chacha ki gaay 2019",
+        "शादी २०१९",
+        "photos from 15/08",
+        "bday 3-4-21",
+        "trip 1998",
+        "Give me the birthday images from 15-16 sept",
+        "birthday in Sept",
+        "Give me images from barbecue nation outing on saturday",
+        "kal wali shaadi ki photos",
+        "pichle mahine ki trip",
+        "pichle hafte",
+        "photos from last week",
+        "YESTERDAY at the park",
+        "पिछले ह\u095e\u094dते की फोटो",  # फ़ as one code point (U+095E)
+        "पिछले हफ\u093c\u094dते की फोटो",  # फ + combining nukta (U+093C)
+        "कल की शादी",
+    ],
 )
-def test_mentions_date(query: str):
-    assert mentions_date(query)
+def test_mentions_date(config: Config, query: str):
+    assert mentions_date(query, config.models.rewriter.date_words)
 
 
 @pytest.mark.parametrize(
     "query",
-    ["kal wali shaadi ki photos", "last Diwali", "pichle hafte", "room 12345", "5 dogs", ""],
+    [
+        "purple saree ki images",
+        "last Diwali",
+        "room 12345",
+        "5 dogs",
+        "the last photo of grandma",
+        "kala kutta",  # "kal" only as a whole word
+        "septic tank",
+        "",
+    ],
 )
-def test_mentions_no_date(query: str):
-    assert not mentions_date(query)
+def test_mentions_no_date(config: Config, query: str):
+    assert not mentions_date(query, config.models.rewriter.date_words)
+
+
+def test_date_words_are_matched_as_whole_phrases():
+    assert mentions_date("photos from last week", ["last week"])
+    assert not mentions_date("last photo of the week", ["last week"])
 
 
 DATED = {**GOOD, "date_range": {"start": "2025-10-19", "end": "2025-10-19"}}
@@ -144,10 +175,24 @@ DATED = {**GOOD, "date_range": {"start": "2025-10-19", "end": "2025-10-19"}}
 
 def test_invented_date_is_dropped(config: Config):
     rewriter = make_rewriter(config, lambda _: chat_reply(json.dumps(DATED)))
-    parsed = rewriter.rewrite("kal wali shaadi ki photos")
+    parsed = rewriter.rewrite("last Diwali wali shaadi ki photos")
     assert parsed.date_range is None
     assert parsed.english == GOOD["english"]  # the rest of the rewrite is kept
     assert parsed.rewrite_error is None
+
+
+def test_named_relative_date_is_kept(config: Config):
+    rewriter = make_rewriter(config, lambda _: chat_reply(json.dumps(DATED)))
+    parsed = rewriter.rewrite("kal wali shaadi ki photos")
+    assert parsed.date_range == ("2025-10-19", "2025-10-19")
+
+
+def test_date_words_come_from_config(config_path: Path):
+    text = config_path.read_text(encoding="utf-8")
+    config_path.write_text(text.replace("date_words: [", "date_words: [Diwali, "), "utf-8")
+    words = load_config(config_path).models.rewriter.date_words
+    assert "diwali" in words  # lowercased
+    assert mentions_date("last Diwali", words)
 
 
 def test_stated_date_is_kept(config: Config):

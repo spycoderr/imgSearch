@@ -34,9 +34,11 @@ def evaluate(
     conn: sqlite3.Connection,
     echo: Callable[[str], None],
     build: Callable[[Config, sqlite3.Connection], tuple[Searcher, CachedRewriter]] = eval_searcher,
+    date_filter: bool = True,
 ) -> Path:
     """Run every ablation on the query set and write `runs_dir/<timestamp>/`. Returns it.
-    `build` makes the searcher; tests pass one with fakes (the M3 test-injection convention)."""
+    `build` makes the searcher; tests pass one with fakes (the M3 test-injection convention).
+    `date_filter=False` ignores dates found in the queries."""
     queries = load_queries(config.eval.queries, conn)
     echo(counts(queries))
     started = datetime.now()
@@ -48,7 +50,7 @@ def evaluate(
         main = done[MAIN]
         echo(f"{q.id:<24} " + "  ".join(f"{m} {main[m]:.2f}" for m in METRICS))
 
-    records = run_eval(searcher, queries, ABLATIONS, progress)
+    records = run_eval(searcher, queries, ABLATIONS, progress, date_filter)
     elapsed_s = time.perf_counter() - t0
     meta = {
         "started": started.isoformat(timespec="seconds"),
@@ -56,6 +58,9 @@ def evaluate(
         "queries": len(queries),
         "queries_sha256": hashlib.sha256(config.eval.queries.read_bytes()).hexdigest(),
         "ablations": [a.name for a in ABLATIONS],
+        "date_filter": date_filter,
+        "signal_weights": config.search.signal_weights,
+        "per_retriever_k": config.search.per_retriever_k,
         "embedder": config.models.embedder.name,
         "rewriter": config.models.rewriter.name,
         "ollama_version": ollama_version(config.models.rewriter.url),

@@ -19,6 +19,7 @@ from imgsearch.sources.importer import ImportResult, import_inbox
 from imgsearch.sources.local import LocalFolderSource
 from imgsearch.stages.caption import CaptionStage
 from imgsearch.stages.embed import EmbedStage
+from imgsearch.stages.filename import FilenameStage
 from imgsearch.stages.ingest import IngestStage, register_new
 from imgsearch.stages.ocr import OcrStage
 from imgsearch.stages.runner import run_stage
@@ -36,6 +37,7 @@ STAGES = {
     "ocr": OcrStage,
     "embed": EmbedStage,
     "caption": CaptionStage,
+    "filename": FilenameStage,
 }
 
 

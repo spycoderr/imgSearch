@@ -50,8 +50,12 @@ models:
         people. An empty list if none.
       - place: the name of a city, country or landmark the query mentions, as written,
         or null. Common places like "park", "beach" or "home" are not place names.
-      - date_range: only if the query states a year or a date, {"start": "YYYY-MM-DD",
-        "end": "YYYY-MM-DD"} covering it. Otherwise null.
+      - date_range: only if the query names a date: a year, a day or a month ("2019",
+        "15 August", "15-16 sept"), a weekday ("on saturday") or a relative day
+        ("yesterday", "kal", "last week", "pichle mahine"). Return {"start": "YYYY-MM-DD",
+        "end": "YYYY-MM-DD"} covering it, worked out from today's date. A day or month
+        without a year is its most recent one on or before today; a weekday is the most
+        recent one before today; "kal" means yesterday. Otherwise null.
 
       Rules:
       - Use only what the query says. Never add people, places, dates, objects or
@@ -67,6 +71,26 @@ models:
       {"english": "the hotel room in Shimla", "people": [], "place": "Shimla", "date_range": null}
       Query: the receipt from the hardware store
       {"english": "the receipt from the hardware store", "people": [], "place": null, "date_range": null}
+    # A date_range from the model is kept only if the query has a digit date (2019, 15/08)
+    # or one of these words or phrases (matched as whole words, any case); otherwise the
+    # model invented it (review W1).
+    date_words: [
+      # English months and weekdays
+      january, february, march, april, may, june, july, august, september, october,
+      november, december, jan, feb, mar, apr, jun, jul, aug, sep, sept, oct, nov, dec,
+      monday, tuesday, wednesday, thursday, friday, saturday, sunday, weekend,
+      # English relative words
+      yesterday, today, tonight, ago, last week, last month, last year, this week,
+      this month, this year,
+      # Hinglish
+      kal, aaj, parso, parson, pichle, pichhle, pichla, pichhla, pichli, hafte, hafta,
+      mahine, mahina, saal, somvar, somwar, mangalvar, mangalwar, budhvar, budhwar,
+      guruvar, guruwar, shukravar, shukrawar, shanivar, shaniwar, ravivar, raviwar, itwar,
+      # Hindi
+      कल, आज, परसों, पिछले, पिछला, पिछली, हफ्ते, हफ़्ते, महीने, साल, जनवरी, फरवरी, फ़रवरी,
+      मार्च, अप्रैल, मई, जून, जुलाई, अगस्त, सितंबर, सितम्बर, अक्टूबर, नवंबर, नवम्बर, दिसंबर,
+      दिसम्बर, सोमवार, मंगलवार, बुधवार, गुरुवार, शुक्रवार, शनिवार, रविवार,
+    ]
   ocr:  # Apple Vision via ocrmac; text in photos is mostly English (plan D6)
     recognition_level: accurate
     languages: ["en-US"]
@@ -77,6 +101,7 @@ stages:
   embed: "2"
   ocr: "1"
   caption: "1"
+  filename: "1"
 
 search:
   top_k: 5
@@ -85,6 +110,8 @@ search:
   # Retrievers `search` uses when none are given (`--signals`). vector alone with the
   # rewrite beat vector+text on the M7 baseline (docs/mvp-summary.md, decision 1).
   default_signals: [vector]
+  # RRF weight per signal: score = sum of weight / (rrf_k + rank). 1.0 = plain RRF.
+  signal_weights: {vector: 1.0, text: 1.0}
 
 eval:
   queries: eval/queries.yaml   # the labelled query set
@@ -108,3 +135,8 @@ s3:
 # under this cap. Sizes are file sizes; exFAT adds ~8% on disk.
 storage:
   cache_max_gb: 20
+
+# Syncthing's local REST API, read only: `imgsearch backfill folders` reads which phone folder
+# each already-imported photo came from. The API key is SYNCTHING_API_KEY in .env.
+syncthing:
+  url: "http://127.0.0.1:8384"

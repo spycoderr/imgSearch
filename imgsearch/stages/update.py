@@ -1,4 +1,4 @@
-"""`imgsearch update`: import, upload, then ingest, embed and ocr (plan P1.5, P1.6).
+"""`imgsearch update`: import, upload, then ingest, embed, ocr and filename (P1.5–P1.7).
 
 Captions are not part of it: they run separately, in the background (decided after M7).
 New originals are uploaded to S3 right after the import, before indexing; the encrypted DB
@@ -15,13 +15,14 @@ from imgsearch.config import Config
 from imgsearch.interfaces import Context, Stage
 from imgsearch.sources.importer import ImportResult, import_inbox
 from imgsearch.stages.embed import EmbedStage
+from imgsearch.stages.filename import FilenameStage
 from imgsearch.stages.ingest import IngestStage
 from imgsearch.stages.ocr import OcrStage
 from imgsearch.stages.runner import run_stage
 from imgsearch.store.roots import require_mounted
 from imgsearch.store.upload import UploadResult, not_in_s3
 
-UPDATE_STAGES = (IngestStage, EmbedStage, OcrStage)  # in this order; never CaptionStage
+UPDATE_STAGES = (IngestStage, EmbedStage, OcrStage, FilenameStage)  # in order; no CaptionStage
 
 
 @dataclass

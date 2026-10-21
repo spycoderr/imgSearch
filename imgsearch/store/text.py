@@ -1,4 +1,4 @@
-"""Write OCR text and captions, keeping the text_fts index in sync.
+"""Write OCR text, captions and file-name words, keeping the text_fts index in sync.
 
 Stages call these instead of touching text_fts directly.
 """
@@ -21,6 +21,13 @@ def save_caption(conn: sqlite3.Connection, image_id: str, text: str, model: str)
             (image_id, text, model),
         )
         _replace_fts(conn, image_id, "caption", text)
+
+
+def save_filename_text(conn: sqlite3.Connection, image_id: str, text: str) -> None:
+    """Store (or replace) an image's `filename` FTS row: words from its file name and source
+    folder. There is no base table; the words are rebuilt from `images`. Commits."""
+    with conn:
+        _replace_fts(conn, image_id, "filename", text)
 
 
 def _replace_fts(conn: sqlite3.Connection, image_id: str, kind: str, text: str) -> None:

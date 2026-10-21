@@ -14,11 +14,19 @@ from imgsearch.eval.tables import all_tables, compare_table
 from imgsearch.store.db import connect
 
 
-def eval_command(ctx: typer.Context) -> None:
+def eval_command(
+    ctx: typer.Context,
+    no_date_filter: Annotated[
+        bool,
+        typer.Option("--no-date-filter", help="Ignore dates found in the queries."),
+    ] = False,
+) -> None:
     """Run every ablation on eval.queries and write a run folder with a contact sheet."""
     config: Config = ctx.obj
     with closing(connect(config)) as conn:
-        run_dir = evaluate(config, ctx.meta["config_path"], conn, typer.echo)
+        run_dir = evaluate(
+            config, ctx.meta["config_path"], conn, typer.echo, date_filter=not no_date_filter
+        )
     typer.echo("")
     for line in all_tables(load_metrics(run_dir)):
         typer.echo(line)

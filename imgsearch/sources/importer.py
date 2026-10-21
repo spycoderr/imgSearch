@@ -10,7 +10,8 @@ hidden files and Syncthing's `.syncthing.*.tmp` files are skipped):
 3. Copy it to originals_root/YYYY/MM/<name>, dated by EXIF, else by the file's mtime. The
    copy goes to a hidden temp name in the target folder, is fsynced, re-hashed and only
    then renamed to its final name.
-4. Insert the `images` row. Only after that commit, delete the inbox file.
+4. Insert the `images` row, with the inbox-relative path and the file's mtime. Only
+   after that commit, delete the inbox file.
 """
 
 import hashlib
@@ -29,6 +30,7 @@ from PIL import Image
 from imgsearch.config import Config
 from imgsearch.sources.local import LocalFolderSource
 from imgsearch.stages.ingest import taken_at
+from imgsearch.store.dates import local_iso
 
 MIN_AGE_S = 60  # Syncthing writes to a temp name and renames, but a copy by hand may not
 COPY_CHUNK = 1 << 20
@@ -73,7 +75,7 @@ def import_inbox(
                 result.too_new += 1
                 continue
             try:
-                relpath = _import_one(item.path, config, conn, write_copy)
+                relpath = _import_one(item.path, inbox, config, conn, write_copy)
             except Exception as e:  # one bad file is reported and must not stop the others
                 result.failed.append((str(item.path), f"{type(e).__name__}: {e}"))
                 continue
@@ -85,9 +87,16 @@ def import_inbox(
 
 
 def _import_one(
-    path: Path, config: Config, conn: sqlite3.Connection, write_copy: Callable[[Path, Path], None]
+    path: Path,
+    inbox: Path,
+    config: Config,
+    conn: sqlite3.Connection,
+    write_copy: Callable[[Path, Path], None],
 ) -> str | None:
-    """Import one inbox file. Returns its new relpath, or None for a duplicate."""
+    """Import one inbox file. Returns its new relpath, or None for a duplicate.
+
+    The row records the inbox-relative path (`source_relpath`, which keeps the phone
+    folder such as "Screenshots") and the file's mtime (`file_mtime`)."""
     image_id = sha256_file(path)
     row = conn.execute("SELECT orig_relpath FROM images WHERE id = ?", (image_id,)).fetchone()
     if row is not None:
@@ -109,8 +118,15 @@ def _import_one(
     now = datetime.now(UTC).isoformat(timespec="seconds")
     with conn:
         conn.execute(
-            "INSERT INTO images (id, orig_relpath, created_at) VALUES (?, ?, ?)",
-            (image_id, relpath, now),
+            "INSERT INTO images (id, orig_relpath, created_at, source_relpath, file_mtime)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (
+                image_id,
+                relpath,
+                now,
+                path.relative_to(inbox).as_posix(),
+                local_iso(path.stat().st_mtime),
+            ),
         )
     path.unlink()
     return relpath

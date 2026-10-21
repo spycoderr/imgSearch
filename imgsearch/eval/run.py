@@ -16,7 +16,7 @@ from imgsearch.interfaces import ParsedQuery, QueryRewriter
 from imgsearch.search.hybrid import SIGNALS, Searcher, open_searcher
 from imgsearch.search.text import TextRetriever
 
-OCR_ONLY = "text_ocr"  # retriever key for full-text search without captions
+NO_CAPTIONS = "text_no_captions"  # retriever key for full-text search without captions
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ ABLATIONS = (
     Ablation("text+rw", ("text",), True),
     Ablation("hybrid", ("vector", "text"), False),
     Ablation("hybrid+rw", ("vector", "text"), True),
-    Ablation("hybrid+rw no captions", ("vector", OCR_ONLY), True),
+    Ablation("hybrid+rw no captions", ("vector", NO_CAPTIONS), True),
 )
 MAIN = "hybrid+rw"  # the configuration `imgsearch search` uses; shown in detail
 
@@ -56,10 +56,12 @@ class CachedRewriter:
 
 
 def eval_searcher(config: Config, conn: sqlite3.Connection) -> tuple[Searcher, CachedRewriter]:
-    """The real models, loaded once, plus an OCR-only text retriever for the no-captions run.
+    """The real models, loaded once, plus a text retriever without captions (OCR and file
+    names) for the no-captions run.
     Also returns the rewrite cache, which records each rewrite's time and result."""
     base = open_searcher(config, conn, signals=SIGNALS)  # all of them, not the search default
-    retrievers = {**base.retrievers, OCR_ONLY: TextRetriever(conn, kinds=("ocr",))}
+    no_captions = TextRetriever(conn, kinds=("ocr", "filename"))
+    retrievers = {**base.retrievers, NO_CAPTIONS: no_captions}
     rewriter = CachedRewriter(base.rewriter)
     return Searcher(conn, config.search, rewriter, retrievers), rewriter
 
@@ -69,13 +71,17 @@ def run_eval(
     queries: list[EvalQuery],
     ablations: tuple[Ablation, ...] = ABLATIONS,
     progress: Callable[[EvalQuery, dict[str, dict]], None] | None = None,
+    date_filter: bool = True,
 ) -> list[dict]:
-    """One record per (query, ablation): what was searched, the top 5 and its metrics."""
+    """One record per (query, ablation): what was searched, the top 5 and its metrics.
+    `date_filter=False` ignores dates found in the queries (to measure the filter)."""
     records = []
     for q in queries:
         done: dict[str, dict] = {}
         for ab in ablations:
-            response = searcher.search(q.query, k=5, rewrite=ab.rewrite, signals=ab.signals)
+            response = searcher.search(
+                q.query, k=5, rewrite=ab.rewrite, signals=ab.signals, date_filter=date_filter
+            )
             ranked = [r.image_id for r in response.results]
             done[ab.name] = {
                 "config": ab.name,
@@ -87,6 +93,9 @@ def run_eval(
                 "english": response.query.english,
                 "rewrite_used": response.rewrite_used,
                 "rewrite_error": response.query.rewrite_error,
+                "date_range": response.query.date_range,  # as parsed by the rewrite
+                "date_filter": response.date_filter,  # the range the results were limited to
+                "date_fallback": response.date_fallback,
                 "results": [
                     {
                         "image_id": r.image_id,

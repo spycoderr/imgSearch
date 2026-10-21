@@ -2,6 +2,7 @@
 
 import os
 import re
+import unicodedata
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
@@ -40,6 +41,9 @@ class RewriterConfig(_Strict):
     url: str
     timeout_s: float
     prompt: str  # system prompt for the rewrite LLM; `{today}` is replaced by today's date
+    # Words and phrases that name a date (month, weekday, "kal", "last week", ...). The
+    # model's date_range is kept only if the query has a digit date or one of these.
+    date_words: list[str]
 
     @field_validator("prompt")
     @classmethod
@@ -47,6 +51,15 @@ class RewriterConfig(_Strict):
         if value.count("{today}") != 1:
             raise ValueError("the rewriter prompt must contain the placeholder {today} once")
         return value
+
+    @field_validator("date_words")
+    @classmethod
+    def _lowercase_words(cls, value: list[str]) -> list[str]:
+        # NFC, so a nukta letter typed either way (फ़ or फ + ़) compares equal.
+        words = [unicodedata.normalize("NFC", " ".join(w.lower().split())) for w in value]
+        if not all(words):
+            raise ValueError("date_words must not contain empty entries")
+        return words
 
 
 class OcrConfig(_Strict):
@@ -66,12 +79,21 @@ class SearchConfig(_Strict):
     per_retriever_k: int
     rrf_k: int
     default_signals: list[Literal["vector", "text"]]  # used when a caller names none
+    # RRF weight per signal: score = sum of weight / (rrf_k + rank). A missing signal is 1.0.
+    signal_weights: dict[Literal["vector", "text"], float]
 
     @field_validator("default_signals")
     @classmethod
     def _some_signals_once(cls, value: list[str]) -> list[str]:
         if not value or len(set(value)) != len(value):
             raise ValueError("default_signals must name vector and/or text, each once")
+        return value
+
+    @field_validator("signal_weights")
+    @classmethod
+    def _positive_weights(cls, value: dict[str, float]) -> dict[str, float]:
+        if any(w <= 0 for w in value.values()):
+            raise ValueError("signal_weights must be positive")
         return value
 
 
@@ -93,6 +115,10 @@ class S3Config(_Strict):
     keychain_account: str
 
 
+class SyncthingConfig(_Strict):
+    url: str  # local REST API, read only (P1.7 folder backfill); key: SYNCTHING_API_KEY
+
+
 class StorageConfig(_Strict):
     cache_max_gb: float  # `imgsearch evict` keeps the originals on the pen drive under this
 
@@ -109,6 +135,7 @@ class Config(_Strict):
     eval: EvalPaths
     s3: S3Config
     storage: StorageConfig
+    syncthing: SyncthingConfig
 
     @field_validator("db_path")
     @classmethod
@@ -153,6 +180,12 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_F
 
 class UnsetVariable(ValueError):
     pass
+
+
+def env_value(name: str, env_file: Path = DEFAULT_ENV_FILE) -> str:
+    """A secret such as an API key, from the environment, else from `env_file`. Raises
+    naming the variable if it is unset."""
+    return expand_vars(f"${{{name}}}", {**dotenv_values(env_file), **os.environ})
 
 
 def expand_vars(value: str, env: Mapping[str, str | None]) -> str:

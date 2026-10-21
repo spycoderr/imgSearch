@@ -17,6 +17,15 @@ def response_lines(response: SearchResponse) -> list[str]:
     else:
         searched = f"searched: {q.english}  (rewritten from: {q.original})"
     lines = [searched, f"signals: {', '.join(response.signals)}"]
+    if response.date_filter:
+        start, end = response.date_filter
+        lines.append(f"dates: {start} to {end}")
+    elif response.date_fallback:
+        start, end = q.date_range
+        lines.append(f"dates: no photos from {start} to {end}; showing results from all dates")
+    elif q.date_range:
+        start, end = q.date_range
+        lines.append(f"dates: {start} to {end} found but not used (date filter off)")
 
     for rank, r in enumerate(response.results, start=1):
         matched = ", ".join(f"{signal} #{r.signals[signal][0]}" for signal in sorted(r.signals))

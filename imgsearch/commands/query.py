@@ -42,8 +42,15 @@ def search(
             " (default: search.default_signals in config.yaml)."
         ),
     ] = None,
+    no_date_filter: Annotated[
+        bool,
+        typer.Option("--no-date-filter", help="Ignore a date found in the query."),
+    ] = False,
 ) -> None:
-    """Search: rewrite QUERY to English, run the chosen retrievers, fuse them with RRF."""
+    """Search: rewrite QUERY to English, run the chosen retrievers, fuse them with RRF.
+
+    A date in the query ("15 sept", "kal", "last week") limits the results to photos from
+    then (EXIF date, else file date), unless nothing matches or --no-date-filter is given."""
     config: Config = ctx.obj
     names = None
     if signals is not None:
@@ -54,7 +61,9 @@ def search(
         start = time.perf_counter()
         searcher = open_searcher(config, conn, signals=names, rewrite=not no_rewrite)
         loaded = time.perf_counter() - start
-        response = searcher.search(query, k=k, rewrite=not no_rewrite)
+        response = searcher.search(
+            query, k=k, rewrite=not no_rewrite, date_filter=not no_date_filter
+        )
     for line in response_lines(response):
         typer.echo(line)
     typer.echo(f"model load: {loaded:.2f}s")

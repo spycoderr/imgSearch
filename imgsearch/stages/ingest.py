@@ -25,6 +25,7 @@ from PIL import ExifTags, Image, ImageOps
 from imgsearch.config import Config
 from imgsearch.interfaces import Context, ImageRecord, ImageSource, ObjectStore
 from imgsearch.store.cache import fetch, open_cloud
+from imgsearch.store.dates import local_iso
 
 # Derivatives are capped by pixel area, not long edge, so panoramas and long screenshots
 # keep readable text (plan D8, changed in M1.1).
@@ -62,8 +63,9 @@ def register_new(source: ImageSource, root: Path, conn: sqlite3.Connection) -> R
             now = datetime.now(UTC).isoformat(timespec="seconds")
             with conn:
                 conn.execute(
-                    "INSERT INTO images (id, orig_relpath, created_at) VALUES (?, ?, ?)",
-                    (image_id, relpath, now),
+                    "INSERT INTO images (id, orig_relpath, created_at, file_mtime)"
+                    " VALUES (?, ?, ?, ?)",
+                    (image_id, relpath, now, local_iso(item.mtime)),
                 )
             result.new += 1
         elif row["orig_relpath"] == relpath:

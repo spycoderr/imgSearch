@@ -7,12 +7,14 @@ import sqlite_vec
 
 from imgsearch.config import EmbedderConfig
 from imgsearch.interfaces import Candidate, Embedder, ParsedQuery
+from imgsearch.store.dates import date_filter_sql
 
 SIGNAL = "vector"
 
 
 class VectorRetriever:
-    """Implements `Retriever`. Ranks only vectors stored under the configured model name.
+    """Implements `Retriever`. Ranks only vectors stored under the configured model name,
+    and only images dated within `q.date_range` when it is set.
 
     Score is cosine similarity (1 - cosine distance); rank 1 is the most similar.
     """
@@ -29,10 +31,16 @@ class VectorRetriever:
         vec = self.embedder.embed_text(q.english)
         if vec.shape != (self.dim,):
             raise ValueError(f"expected a query vector of length {self.dim}, got {vec.shape}")
+        in_range, range_params = date_filter_sql(q.date_range)
         rows = self.conn.execute(
             "SELECT image_id, vec_distance_cosine(vec, ?) AS distance FROM embeddings"
-            " WHERE model = ? ORDER BY distance, image_id LIMIT ?",
-            (sqlite_vec.serialize_float32(vec.astype(np.float32).tolist()), self.model, k),
+            f" WHERE model = ?{in_range} ORDER BY distance, image_id LIMIT ?",
+            (
+                sqlite_vec.serialize_float32(vec.astype(np.float32).tolist()),
+                self.model,
+                *range_params,
+                k,
+            ),
         ).fetchall()
         return [
             Candidate(image_id=row[0], rank=rank, score=1.0 - row[1], signal=SIGNAL)

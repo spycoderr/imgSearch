@@ -56,6 +56,14 @@ def _query_block(qid: str, runs: dict[str, dict], paths: dict[str, str]) -> str:
         rewrite = f"<span class='miss'>rewrite skipped: {escape(rewritten['rewrite_error'])}</span>"
     else:
         rewrite = f"rewrite: <b>{escape(rewritten['english'])}</b>"
+    if rewritten.get("date_range"):  # runs before P1.7 have no date fields
+        start, end = rewritten["date_range"]
+        used = (
+            "fell back to all dates"
+            if rewritten["date_fallback"]
+            else ("filtered" if rewritten["date_filter"] else "not used")
+        )
+        rewrite += f" · dates {escape(start)} to {escape(end)} ({used})"
     scores = "".join(
         f"<tr><td>{escape(name)}</td><td class='{'hit' if r['hit@5'] else 'miss'}'>"
         f"{r['hit@5']:.0f} / {r['recall@5']:.2f} / {r['rr']:.2f}</td></tr>"

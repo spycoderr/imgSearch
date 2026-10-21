@@ -84,3 +84,46 @@ def test_deterministic_regardless_of_list_order():
     a = ranking("vector", "a", "b", "c")
     b = ranking("text", "c", "d", "a")
     assert rrf_fuse([a, b], K) == rrf_fuse([b, a], K)
+
+
+# ---- weights (P1.7) ----
+
+
+def test_weights_scale_each_signal():
+    fused = rrf_fuse(
+        [ranking("vector", "a", "b"), ranking("text", "b", "c")], K, {"vector": 1.0, "text": 0.5}
+    )
+    by_id = {f.image_id: f.score for f in fused}
+    assert by_id["a"] == pytest.approx(1 / 61)
+    assert by_id["b"] == pytest.approx(1 / 62 + 0.5 / 61)
+    assert by_id["c"] == pytest.approx(0.5 / 62)
+
+
+def test_a_low_text_weight_lets_vector_win():
+    # Plain RRF: c (text 1st) ties x (vector 1st) and beats a (vector 2nd). With text at
+    # 0.25, vector's 2nd place beats text's 1st.
+    lists = [ranking("vector", "x", "a"), ranking("text", "c")]
+    assert order(rrf_fuse(lists, K)) == ["c", "x", "a"]
+    assert order(rrf_fuse(lists, K, {"text": 0.25})) == ["x", "a", "c"]
+
+
+def test_missing_weight_is_one_and_equal_weights_match_plain_rrf():
+    lists = [ranking("vector", "a", "b", "c"), ranking("text", "c", "b", "a")]
+    assert rrf_fuse(lists, K, {"text": 1.0}) == rrf_fuse(lists, K)
+    assert rrf_fuse(lists, K, {"vector": 1.0, "text": 1.0}) == rrf_fuse(lists, K)
+
+
+def test_weighted_ties_break_by_best_rank_then_id():
+    # Both signals weighted 2 order like plain RRF, ties included (y and z: same score and
+    # best rank, so by image_id).
+    lists = [ranking("vector", "z", "s"), ranking("text", "y")]
+    assert order(rrf_fuse(lists, K, {"vector": 2.0, "text": 2.0})) == ["y", "z", "s"]
+    fused = rrf_fuse([ranking("vector", "a", "b", "c"), ranking("text", "c", "b", "a")], K, {})
+    assert order(fused) == ["a", "c", "b"]
+
+
+def test_weighted_is_deterministic_regardless_of_list_order():
+    a = ranking("vector", "a", "b", "c")
+    b = ranking("text", "c", "d", "a")
+    weights = {"vector": 1.0, "text": 0.3}
+    assert rrf_fuse([a, b], K, weights) == rrf_fuse([b, a], K, weights)

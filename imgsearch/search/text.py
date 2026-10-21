@@ -1,12 +1,13 @@
-"""Full-text retriever over `text_fts` (OCR text and captions), ranked by bm25."""
+"""Full-text retriever over `text_fts` (OCR text, captions, file-name words), ranked by bm25."""
 
 import sqlite3
 import unicodedata
 
 from imgsearch.interfaces import Candidate, ParsedQuery
+from imgsearch.store.dates import date_filter_sql
 
 SIGNAL = "text"
-KINDS = ("ocr", "caption")  # the `kind` values in text_fts
+KINDS = ("ocr", "caption", "filename")  # the `kind` values in text_fts
 
 # Dropped from queries (any case): they match almost every caption ("This photo shows a..."),
 # so they would add noise to every fused result.
@@ -38,12 +39,13 @@ def match_expression(*texts: str) -> str:
 
 
 class TextRetriever:
-    """`Retriever` over all of `text_fts`, so OCR text and captions both match.
+    """`Retriever` over all of `text_fts`, so OCR text, captions and file-name words match.
 
     One query covers the words of both `q.english` and `q.original`. Each image appears
     once, at its best-scoring row. `Candidate.score` is `-bm25`, so higher is better.
-    `kinds` limits the rows searched, e.g. `("ocr",)` to leave captions out (the M7
-    ablation); the default searches every kind.
+    When `q.date_range` is set, only images dated within it are returned.
+    `kinds` limits the rows searched, e.g. `("ocr", "filename")` to leave captions out
+    (the M7 ablation); the default searches every kind.
     """
 
     def __init__(self, conn: sqlite3.Connection, kinds: tuple[str, ...] = KINDS) -> None:
@@ -59,10 +61,11 @@ class TextRetriever:
             return []
         # bm25() can't be used under GROUP BY, so keep each image's first (best) row here.
         marks = ",".join("?" * len(self.kinds))
+        in_range, range_params = date_filter_sql(q.date_range)
         rows = self.conn.execute(
             "SELECT image_id, bm25(text_fts) FROM text_fts WHERE text_fts MATCH ?"
-            f" AND kind IN ({marks}) ORDER BY bm25(text_fts), image_id",
-            (expression, *self.kinds),
+            f" AND kind IN ({marks}){in_range} ORDER BY bm25(text_fts), image_id",
+            (expression, *self.kinds, *range_params),
         )
         best: dict[str, float] = {}
         for image_id, bm25 in rows:

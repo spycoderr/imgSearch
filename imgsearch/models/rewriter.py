@@ -3,6 +3,7 @@
 import logging
 import re
 import unicodedata
+from collections.abc import Collection
 from datetime import date
 
 import httpx
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ValidationError, field_validator
 
 from imgsearch.config import RewriterConfig
 from imgsearch.interfaces import ParsedQuery
+from imgsearch.search.text import query_words
 
 log = logging.getLogger(__name__)
 
@@ -50,13 +52,18 @@ OUTPUT_SCHEMA = RewriteOutput.model_json_schema()
 _DATE_IN_QUERY = re.compile(r"(?<!\d)(?:(?:19|20)\d\d|\d{1,2}[./-]\d{1,2})(?!\d)")
 
 
-def mentions_date(query: str) -> bool:
-    """True if the query has a digit-based year or date. Digits of any script count (२०१९)."""
+def mentions_date(query: str, date_words: Collection[str]) -> bool:
+    """True if the query names a date: a digit-based year or day/month (digits of any
+    script count, २०१९), or one of `date_words` (lowercase words or phrases such as
+    "sept", "kal", "last week"), matched as whole words in any case."""
     ascii_digits = "".join(
         str(unicodedata.decimal(c)) if unicodedata.decimal(c, None) is not None else c
         for c in query
     )
-    return _DATE_IN_QUERY.search(ascii_digits) is not None
+    if _DATE_IN_QUERY.search(ascii_digits):
+        return True
+    words = f" {' '.join(query_words(unicodedata.normalize('NFC', query).lower()))} "
+    return any(f" {phrase} " in words for phrase in date_words)
 
 
 class OllamaRewriter:
@@ -72,9 +79,9 @@ class OllamaRewriter:
         except (httpx.HTTPError, ValidationError) as err:
             log.warning("query rewrite failed, using the query as given: %s", err)
             return ParsedQuery(english=query, original=query, rewrite_error=_reason(err))
-        if output.date_range and not mentions_date(query):
-            # The model invents dates for words like "kal" or "last Diwali" (review item W1).
-            log.info("dropping date_range %s: no year or date in the query", output.date_range)
+        if output.date_range and not mentions_date(query, self.config.date_words):
+            # The model invents dates, e.g. from "last Diwali" (review item W1).
+            log.info("dropping date_range %s: the query names no date", output.date_range)
             output.date_range = None
         return ParsedQuery(
             english=output.english,

@@ -3,13 +3,13 @@
 import sqlite3
 import time
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from imgsearch.config import Config, SearchConfig
 from imgsearch.interfaces import ParsedQuery, QueryRewriter, Result, Retriever
 from imgsearch.models.rewriter import OllamaRewriter
 from imgsearch.search import text, vector
-from imgsearch.search.fusion import rrf_fuse
+from imgsearch.search.fusion import Fused, rrf_fuse
 
 SIGNALS = (vector.SIGNAL, text.SIGNAL)
 
@@ -30,6 +30,11 @@ class SearchResponse:
     signals: tuple[str, ...]  # the retrievers that ran
     results: list[Result]
     timings: Timings
+    # The date range the results were filtered to (`query.date_range`), or None when the
+    # query names no date, the filter was off, or nothing matched in the range.
+    date_filter: tuple[str, str] | None = None
+    # True when the range matched nothing and the results are from all dates instead.
+    date_fallback: bool = False
 
 
 class Searcher:
@@ -57,9 +62,14 @@ class Searcher:
         k: int | None = None,
         rewrite: bool = True,
         signals: Collection[str] | None = None,
+        date_filter: bool = True,
     ) -> SearchResponse:
         """Top `k` (default `search.top_k`) for `query`. `rewrite` and `signals` are the
-        switches for ablations; `signals=None` uses every retriever this searcher has."""
+        switches for ablations; `signals=None` uses every retriever this searcher has.
+
+        When the rewrite finds a date range, every retriever keeps only images dated in
+        it. If none are, the search runs again without the range and says so
+        (`date_fallback`). `date_filter=False` ignores the range."""
         names = tuple(self.retrievers) if signals is None else tuple(signals)
         unknown = [s for s in names if s not in self.retrievers]
         if not names or unknown:
@@ -71,10 +81,13 @@ class Searcher:
         q = self.rewriter.rewrite(query) if rewrite else ParsedQuery(english=query, original=query)
         rewritten = time.perf_counter()
 
-        rankings = [
-            self.retrievers[name].retrieve(q, self.config.per_retriever_k) for name in names
-        ]
-        fused = rrf_fuse(rankings, self.config.rrf_k)[: k or self.config.top_k]
+        date_range = q.date_range if date_filter else None
+        fused = self._fuse(replace(q, date_range=date_range), names)
+        fallback = not fused and date_range is not None
+        if fallback:
+            date_range = None
+            fused = self._fuse(replace(q, date_range=None), names)
+        fused = fused[: k or self.config.top_k]
         rows = image_rows(self.conn, [f.image_id for f in fused])
         results = [
             Result(
@@ -95,7 +108,15 @@ class Searcher:
             signals=names,
             results=results,
             timings=Timings(rewritten - start, end - rewritten, end - start),
+            date_filter=date_range,
+            date_fallback=fallback,
         )
+
+    def _fuse(self, q: ParsedQuery, names: tuple[str, ...]) -> list[Fused]:
+        rankings = [
+            self.retrievers[name].retrieve(q, self.config.per_retriever_k) for name in names
+        ]
+        return rrf_fuse(rankings, self.config.rrf_k, self.config.signal_weights)
 
 
 def image_rows(conn: sqlite3.Connection, image_ids: list[str]) -> dict[str, sqlite3.Row]:
