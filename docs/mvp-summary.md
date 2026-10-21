@@ -223,3 +223,15 @@ Open decisions for the user:
 **Caveat:** 53 queries on one library. One new query moves the new-12 average by up to 0.08, and the
 weights were tuned and measured on the same queries. File names help hybrid mostly (signatures, scans); the
 default vector search gains from the dates and the rewrite only.
+
+## P1.8 addendum: the place filter
+
+2026-10-21 · Applied the rule in `docs/acceptance/P1.8.md` item 14. Numbers are in `docs/eval/baseline-p1.8.md`
+(57 queries: the 53 above plus 4 user-confirmed place queries `u3-*`).
+
+1. **Place filter off by default** (`search.place_filter: false`; `--place-filter` turns it on).
+   - Rule: keep it on only if place queries improve and the old queries don't drop by more than 0.02 recall@5.
+   - vector+rw on the 10 place queries: 0.74 without, 0.64 with. The old 53: 0.79 → 0.77.
+   - The loss is `user-rajasthan-trip`: its photos have no GPS, and their captions say "Jaipur", not "Rajasthan".
+2. **Default stays vector + rewrite with the date filter on**, as after P1.7. vector+rw is unchanged on all 53 old
+   queries; places add a date-and-place line to each result and `place` rows to text search.

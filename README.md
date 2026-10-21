@@ -635,7 +635,7 @@ how a query's date becomes a filter.
 ## Places from GPS (P1.8)
 
 Photos with GPS get a place: the nearest city, its district, state and country, and the
-nearest landmark (monument, fort, temple, park, beach, market, ...) within 1 km. It all
+nearest landmark (monument, fort, temple, park, beach, market, ...) within 0.5 km. It all
 happens offline, from [GeoNames](https://www.geonames.org/) data: no geocoding API is
 called, ever, and search uses only the DB.
 
@@ -663,23 +663,29 @@ uv run imgsearch status         # "gps: N of M photos; places resolved: …"
   - **city:** the nearest town of at least `city_min_population` (1,000).
   - **district and state:** from the nearest populated place of any size, so a Noida photo
     is in Uttar Pradesh even when New Delhi is the nearest city.
-  - **landmark:** the nearest feature with one of `landmark_codes` within `landmark_max_km`.
+  - **landmark:** the nearest feature with one of `landmark_codes` within `landmark_max_km`
+    (0.5 km: at 1 km a home 0.9 km from Hauz Khas Village got it as its landmark).
   - Bump `stages.places` after changing them.
 
-**Place-aware search.** If the rewriter's `place` names a place some photo was taken at,
-search keeps only photos from there, or whose OCR text, caption or file name contains the
-name.
-- A place matches at every level: "Rajasthan" finds Jaipur and Amer photos, and "Jaipur"
-  matches both the city and the district.
+**Every result shows its date and place**, in the CLI (`2023-12-30 · Amber Fort, Amer,
+Jaipur, Rajasthan`) and in the bot's captions. Place names are also search text, so
+`--signals vector,text` matches "Goa" or "India Gate".
+
+**The place filter (off by default).** With `--place-filter` (or `search.place_filter: true`
+in `config.yaml`), if the rewriter's `place` names a place some photo was taken at, search
+keeps only photos from there, or whose OCR text, caption or file name contains the name. It
+is off because it lowered the place queries in the P1.8 eval (0.74 → 0.64 recall@5): photos
+without GPS drop out unless their text names the place (`docs/eval/baseline-p1.8.md`). The
+CLI says `place: Goa found but not used (place filter off)` when it would have applied.
+- A place matches at every level: "Rajasthan" finds the Chittorgarh and Jaisalmer photos,
+  and "Pune" matches both the city and the district.
 - GeoNames' alternate names count: Bangalore/Bengaluru, Gurgaon/Gurugram and जयपुर all
   resolve.
 - Words that aren't places in the library ("park", "sofa", "home") are ignored.
 - With a date as well, both must hold.
 - If nothing matches, the place is dropped first (`place: no photos from Jaipur; showing
   results from all places`), then the date.
-- `--no-place-filter` on `search` and `eval` turns it off.
-- Each result shows its date and place, in the CLI (`2023-12-30 · Amber Fort, Amer, Jaipur,
-  Rajasthan`) and in the bot's captions.
+- `--place-filter` / `--no-place-filter` on `search` and `eval` override the config.
 
 Restaurants, shops and other businesses are not in GeoNames (17 restaurants for all of
 India), so a photo inside one gets its area, not its name.
