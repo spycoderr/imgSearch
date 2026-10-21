@@ -40,3 +40,50 @@ API was never called.
 **Phase B needs from you:** the Meta app with a system-user token, the app secret, the phone
 number id, your number as a test recipient, the five `WHATSAPP_*` keys in `.env`, a tunnel
 (a quick `cloudflared tunnel --url` is fine to start), and no caption run.
+
+## Phase B, part 1 (2026-10-21)
+
+**Part 1 stopped: two blockers on the Meta side, and Funnel is down.** Branch `p3` (rebased on
+`main` at `315bfb6`), last code commit `2fdaa05`. Not merged. No search ran, no DB was
+created and no models loaded.
+
+**Why the phone gets nothing: not known yet, because Meta's status callbacks never reach us.**
+1. **Our app isn't subscribed to your WhatsApp Business Account** (`1650890083124255`).
+   Its `subscribed_apps` lists only Meta's internal "WA DevX Webhook Events 1P App". So
+   message and status webhooks never come to our URL, even though the dashboard webhook
+   verified (13:07:27). Fix: `POST /1650890083124255/subscribed_apps` with our token.
+   You approved it, but by then the token had expired.
+2. **The token was the temporary one** (type `USER`, expired 13:30 IST). Every call now gets
+   **error 190/463**, "Session has expired". A permanent system-user token is needed.
+3. Once both are fixed, a `failed` callback names the cause. Likely candidates: 131047
+   (24 h window), 131026 (undeliverable), 130497 (country restriction).
+
+**Done**
+- Rebased on `main` (plan conflict resolved, both sides kept). Status callbacks (sent,
+  delivered, read, failed, with code and title) are logged without the recipient.
+- Found and fixed a leak: WhatsApp message ids contain the phone number (base64), so logs now
+  carry a short hash (`m-…`). 350 tests pass; ruff clean.
+- `.env` symlinked; the server runs from the worktree with `WHATSAPP_ALLOWED_SENDERS=0`
+  overriding `.env`, so a text from you is only counted (no search, no second DB, no SigLIP
+  during the caption run).
+- Tailscale Funnel exposes only `/webhook`. Public DNS took ~15 min to appear, which is why
+  Meta's first verify failed. After that, the public path gave: wrong token 403, right token
+  200, unsigned or bad signature POST 401, `/health` 404.
+- README: Tailscale Funnel, the DNS delay, and setup step 7 (`subscribed_apps`). Plan "Changes
+  during build" and `docs/reports/P3.md` updated.
+
+**Problem: Funnel stopped answering after ~14:00.** Both relays now fail the TLS handshake,
+and your phone on mobile data can't connect either. Restarting Funnel didn't help, and
+nothing reaches the Mac. Next: quit and reopen the Tailscale app, then re-check from the
+phone. Cloudflare Tunnel is the fallback.
+
+**Still running**
+- Server: `imgsearch serve` from `.worktrees/p3`, log `.worktrees/p3/data/logs/serve.log`.
+  Stop it with `pkill -INT -f "imgsearch serve"`.
+- Funnel on `/webhook`. Stop it with `tailscale funnel --https=443 off`.
+
+**Needed from you:**
+1. Restart the Tailscale app and check Funnel from the phone.
+2. A permanent system-user token in `.env`.
+3. Then I subscribe the app to the WABA, restart `serve`, send one test text and read the
+   callback.
