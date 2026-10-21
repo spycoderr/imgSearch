@@ -26,8 +26,10 @@ class SiglipEmbedder:
         # checkpoint's out-of-vocab bos/eos ids (harmless, see the M2 report). Errors still show.
         transformers.logging.set_verbosity_error()
         transformers.logging.disable_progress_bar()
-        self.processor = AutoProcessor.from_pretrained(config.name)
-        self.model = AutoModel.from_pretrained(config.name).to(self.device).eval()
+        # From the HF cache only, with no Hub check per load (P3-T review T5).
+        self.processor = AutoProcessor.from_pretrained(config.name, local_files_only=True)
+        model = AutoModel.from_pretrained(config.name, local_files_only=True)
+        self.model = model.to(self.device).eval()
 
     def embed_images(self, paths: list[Path]) -> np.ndarray:
         images = []
