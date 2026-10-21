@@ -74,11 +74,13 @@ def upload_lines(result: UploadResult, pending: int) -> list[str]:
     ]
     if result.error:
         lines.append(f"upload: stopped early: {result.error}")
-    if result.db is not None:
-        lines.append(f"db copy: {result.db}")
-    if result.db_error is not None:
-        lines.append(f"db copy: FAILED: {result.db_error}")
     return lines
+
+
+def db_copy_lines(result: UploadResult) -> list[str]:
+    if result.db_error is not None:
+        return [f"db copy: FAILED: {result.db_error}"]
+    return [] if result.db is None else [f"db copy: {result.db}"]
 
 
 def upload_command(ctx: typer.Context) -> None:
@@ -89,7 +91,7 @@ def upload_command(ctx: typer.Context) -> None:
         result = run_upload(config, conn)
         run_upload_db(config, conn, result)
         pending = len(not_in_s3(conn))
-    for line in upload_lines(result, pending):
+    for line in upload_lines(result, pending) + db_copy_lines(result):
         typer.echo(line)
     for relpath, error in result.failed:
         typer.echo(f"  failed: {relpath}: {error}", err=True)

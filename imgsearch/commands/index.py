@@ -5,7 +5,13 @@ from typing import Annotated
 
 import typer
 
-from imgsearch.commands.cloud import cloud_status_lines, run_upload, run_upload_db, upload_lines
+from imgsearch.commands.cloud import (
+    cloud_status_lines,
+    db_copy_lines,
+    run_upload,
+    run_upload_db,
+    upload_lines,
+)
 from imgsearch.commands.common import need_drive, stage_failures, stage_line
 from imgsearch.config import Config
 from imgsearch.interfaces import Context
@@ -159,6 +165,8 @@ def update_command(ctx: typer.Context) -> None:
         typer.echo(stage_line(name, stage_counts))
         for relpath, error in failures[name]:
             typer.echo(f"  failed: {relpath}: {error}", err=True)
+    for line in db_copy_lines(result.uploaded):  # uploaded last, after indexing
+        typer.echo(line)
     # Offline is not an error here: the originals are uploaded on a later run.
     failed = result.imported.failed or result.uploaded.failed or result.uploaded.db_error
     if failed or any(failures.values()):

@@ -15,6 +15,7 @@ from PIL import Image
 from typer.testing import CliRunner
 
 from imgsearch.cli import app
+from imgsearch.commands.cloud import db_copy_lines
 from imgsearch.config import Config, load_config
 from imgsearch.interfaces import Context, StoreUnavailable
 from imgsearch.sources.importer import import_inbox
@@ -684,3 +685,9 @@ def test_r8_restore_check_counts_what_it_sampled(config: Config, conn, store):
 
     result = restore_check(config, conn, store, KEY, sample=10)
     assert result.sampled == 3 and len(result.checked) == 3
+
+
+def test_r7_db_copy_lines_report_the_copy_or_its_failure():
+    assert db_copy_lines(UploadResult(db="uploaded (1.0 MB)")) == ["db copy: uploaded (1.0 MB)"]
+    assert db_copy_lines(UploadResult(db_error="OSError: x")) == ["db copy: FAILED: OSError: x"]
+    assert db_copy_lines(UploadResult()) == []
