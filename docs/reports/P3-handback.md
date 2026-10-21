@@ -87,3 +87,29 @@ phone. Cloudflare Tunnel is the fallback.
 2. A permanent system-user token in `.env`.
 3. Then I subscribe the app to the WABA, restart `serve`, send one test text and read the
    callback.
+
+## Phase B, part 1 continued (2026-10-21, 15:55)
+
+**Callbacks now reach the webhook, and they say why nothing arrives: Meta has blocked your
+business account from sending.** Our code and setup are fine.
+
+- I subscribed our app to the WhatsApp Business Account (it now lists `img-search`),
+  restarted `serve` on the new token, and sent one test text at 15:51:32. It was accepted,
+  and 8 s later the callback came back: **failed, error 131031 "Business Account locked"**.
+- The Health Status API gives the reasons. The phone number and the app can send; the
+  account and the business are BLOCKED:
+  - **131000:** the business profile is incomplete; Legal Name, Country and Website are
+    required "before integrity checks can proceed".
+  - **141006:** a problem with the payment method (blocks business-initiated messages).
+  - **141010:** the business hasn't passed business verification.
+- **Fix, cheapest first; I re-test after each:**
+  1. Meta Business Suite → Settings → Business info: fill in Legal Name, Country and Website.
+  2. If still blocked: add a payment method in WhatsApp Manager.
+  3. If still blocked: business verification (needs documents; takes days).
+- **The new token is temporary again** (type `USER`, expires today 17:30 IST). Create it as
+  a **system user** in Business Settings → Users → System users → Generate token. It should
+  show type `SYSTEM_USER` and no expiry.
+- **Funnel:** after your Tailscale restart one relay works (`.153`), the other (`.217`) still
+  fails the TLS handshake. Meta retries, so deliveries arrive, possibly late.
+- **Still running:** `serve` (stop: `pkill -INT -f "imgsearch serve"`) and Funnel on
+  `/webhook` (stop: `tailscale funnel --https=443 off`). Not merged; no search ran.
