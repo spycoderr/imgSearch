@@ -28,7 +28,7 @@ named next to them.
 | P1.5-A | Pen-drive storage layout, `imgsearch import` (inbox → originals), `update`, `verify` | done |
 | P1.6 | Originals encrypted in S3 Glacier Instant Retrieval; pen drive as an LRU cache: `upload`, `evict`, `fetch` | done |
 | P1.7 | File names and phone folders as search text, date filtering, weighted RRF, `backfill` | done (eval in `docs/eval/baseline-p1.7.md`) |
-| P3 | Chat bot: `imgsearch bot` on Telegram (P3-T); WhatsApp built but parked (Meta account locked) | Telegram phase A (code and tests) done; phase B (real messages) pending |
+| P3 | Chat bot: `imgsearch bot` on Telegram (P3-T); WhatsApp built but parked (Meta account locked) | done (Telegram live; WhatsApp parked) |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -651,11 +651,13 @@ and no open port.
 | Message | Reply |
 | --- | --- |
 | any text, e.g. `mummy ke saath beach pe` | The top 5 photos (`search.top_k`) as one album, each with "rank · date · short caption". Same search as `imgsearch search` (rewrite on, `search.default_signals`) |
-| `more` | The next 5 for your last search (up to `chat.max_results`) |
+| `10 photos of …`, `top 3 …` | That many photos (up to `chat.max_results`, 20) instead of 5. Plain numbers such as "2 dogs" or "15-16 sept" aren't counts |
+| `more` | The next page for your last search (5, or the number you asked for), up to `chat.max_results` (20) in all |
 | `original N` | Photo N's original file, as a document, if it's on the pen drive or can be fetched from S3, and under the app's file limit (Telegram 50 MB, `telegram.original_max_mb`) |
 | `help`, `/start` | The list above |
 
-Commands also work with a leading "/" (`/more`, `/original 2`).
+Commands also work with a leading "/" (`/more`, `/original 2`), and `original N` also as
+"Original 2.", "original2", "orig 2" or "original #2".
 
 - Photos are the resized derivatives (never the originals) unless you ask for `original N`.
 - With the pen drive unplugged, it sends the thumbnails and says full-size images are
@@ -698,7 +700,7 @@ Commands also work with a leading "/" (`/more`, `/original 2`).
 ### Running it
 
 ```sh
-uv run imgsearch bot          # polls until Ctrl-C; finishes queued messages before exiting
+uv run imgsearch bot          # polls until Ctrl-C or `kill <pid>`; finishes queued messages first
 ```
 
 To start it at login, use the launchd template `docs/launchd/com.imgsearch.bot.plist`:
@@ -712,6 +714,14 @@ launchctl bootout gui/$(id -u)/com.imgsearch.bot      # to stop it and remove it
 ```
 
 The log is `data/logs/bot.log`.
+
+- **Stopping a bot started in the background** (`nohup … &`): use `kill <pid>` (SIGTERM, what
+  launchd sends). A background job started from a script ignores Ctrl-C (SIGINT), so
+  `kill -INT` does nothing. Only one bot may poll at a time: a second one gets Telegram's
+  `409 Conflict` until the first stops.
+- **IPv4 only** (`telegram.ipv4_only: true`): on this Mac, IPv6 connections to Telegram
+  sometimes hung for 30 s or more, which made some replies take 35–115 s. Over IPv4 every
+  connection took under 1 s. Set it to `false` if your network's IPv6 is fine.
 
 ### Security and privacy
 
