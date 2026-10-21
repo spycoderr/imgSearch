@@ -126,3 +126,13 @@ The server only counts it (no search). I then send one reply inside the 24 h win
 says 141006 blocks only business-initiated messages, and the bot only replies, so this shows
 whether the bot works without a payment method. If it still fails, add a payment method in
 WhatsApp Manager → Payment settings and I re-test. The token still expires at 17:30 IST.
+
+## Phase B, part 1: service-window test (2026-10-21, 16:05)
+
+**Replies are blocked too.** Your "hi" reached the bot at 16:03:02, so inbound works. My reply
+at 16:03:16, inside the 24 h window, failed with 131031 "Business Account locked". The
+account-level block stops replies as well, not just messages the business starts.
+
+**Next:** add a payment method in WhatsApp Manager → Payment settings (for the business that
+owns this WhatsApp account), then tell me and I re-test. If it still fails, business
+verification is the last block. The token expires at 17:30 IST.
