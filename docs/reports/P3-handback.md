@@ -113,3 +113,16 @@ business account from sending.** Our code and setup are fine.
   fails the TLS handshake. Meta retries, so deliveries arrive, possibly late.
 - **Still running:** `serve` (stop: `pkill -INT -f "imgsearch serve"`) and Funnel on
   `/webhook` (stop: `tailscale funnel --https=443 off`). Not merged; no search ran.
+
+## Phase B, part 1: re-test after the business profile (2026-10-21, 16:05)
+
+**Still blocked, but one step closer.** After you filled in the business profile, the
+business went from BLOCKED to LIMITED (only verification is missing). The WhatsApp Business
+Account is still BLOCKED by the payment-method error (141006). A test text at 16:02:14 failed
+again with 131031 "Business Account locked".
+
+**Next, free test first:** send any message (e.g. "hi") from your phone to the test number.
+The server only counts it (no search). I then send one reply inside the 24 h window. Meta
+says 141006 blocks only business-initiated messages, and the bot only replies, so this shows
+whether the bot works without a payment method. If it still fails, add a payment method in
+WhatsApp Manager → Payment settings and I re-test. The token still expires at 17:30 IST.
