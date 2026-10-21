@@ -152,3 +152,14 @@ verified" (141010) remains (overall LIMITED). But replies inside the open 24 h w
 
 Nothing in our code needs to change: inbound messages arrive, and every send is accepted
 and gets a callback within ~5 s. When a reply is delivered, part 2 (search) can start.
+
+## Phase B, part 1: last retry, server stopped (2026-10-21, 16:20)
+
+**Still locked.** The retry at 16:19 failed with 131031 "Business Account locked"; the
+health status was unchanged (only business verification is missing). As you asked, I stopped
+`imgsearch serve`. Tailscale Funnel is still on, forwarding `/webhook` to nothing; turn it
+off with `tailscale funnel --https=443 off`.
+
+Next: business verification and/or a Meta support ticket for the unlock (error 131031, WABA
+1650890083124255), plus a permanent system-user token. Then restart `serve` and send one
+test message.
