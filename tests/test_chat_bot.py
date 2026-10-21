@@ -148,18 +148,42 @@ def test_caption_date_falls_back_to_the_file_mtime(bot, messenger, chat_library)
     assert messenger.albums()[0][1][1] == "2 · 2023-01-02"
 
 
-def test_date_fallback_is_explained(config, chat_library, make_searcher, messenger):
+def dated_searcher(make_searcher, chat_library, date_range):
+    """A searcher whose rewrite finds `date_range`; its retriever honours the range like
+    the real ones (images are dated 2024-05-01 to 2024-05-12)."""
     searcher = make_searcher(chat_library)
-    query = ParsedQuery("dog 2019", QUERY, date_range=("2019-01-01", "2019-12-31"))
-    searcher.rewriter.rewrite = lambda q: query
-    all_dates = searcher.retrievers["vector"].retrieve
-    # Like the real retrievers: nothing in the range (every image is from 2024).
-    searcher.retrievers["vector"].retrieve = lambda q, k: [] if q.date_range else all_dates(q, k)
-    make_bot(config, messenger, searcher).on_message(QUERY, CHAT)
-    assert messenger.texts() == [
-        "No photos from 2019-01-01 to 2019-12-31, so these are from any date."
-    ]
+    searcher.rewriter.rewrite = lambda q: ParsedQuery("dogs", q, date_range=date_range)
+    every_date = searcher.retrievers["vector"].retrieve
+
+    def retrieve(q, k):
+        found = every_date(q, k)
+        if q.date_range is None:
+            return found
+        start, end = q.date_range
+        return [c for c in found if start <= f"2024-05-{c.image_id[3:]}" <= end]
+
+    searcher.retrievers["vector"].retrieve = retrieve
+    return searcher
+
+
+def test_date_fallback_says_no_photos_matched_the_dates(
+    config, chat_library, make_searcher, messenger
+):
+    """P1.7 review N3: with `date_fallback`, the reply says the dates matched nothing."""
+    searcher = dated_searcher(make_searcher, chat_library, ("2019-09-15", "2019-09-16"))
+    make_bot(config, messenger, searcher).on_message("birthday images from 15-16 sept", CHAT)
+    note = "No photos matched the dates 2019-09-15 to 2019-09-16, so these are from all dates."
+    assert messenger.texts() == [note]
+    kinds = [e[0] for e in messenger.events if e[0] != "activity"]
+    assert kinds == ["text", "photos"]  # the note comes before the photos
     assert len(messenger.albums()[0]) == 5
+
+
+def test_no_date_note_when_the_dates_matched(config, chat_library, make_searcher, messenger):
+    searcher = dated_searcher(make_searcher, chat_library, ("2024-05-02", "2024-05-03"))
+    make_bot(config, messenger, searcher).on_message("dogs 2-3 may", CHAT)
+    assert messenger.texts() == []
+    assert [c.split(" · ")[1] for _, c in messenger.albums()[0]] == ["2024-05-02", "2024-05-03"]
 
 
 def test_more_pages_through_the_last_search(bot, messenger, config):

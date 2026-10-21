@@ -28,7 +28,6 @@ named next to them.
 | P1.5-A | Pen-drive storage layout, `imgsearch import` (inbox → originals), `update`, `verify` | done |
 | P1.6 | Originals encrypted in S3 Glacier Instant Retrieval; pen drive as an LRU cache: `upload`, `evict`, `fetch` | done |
 | P1.7 | File names and phone folders as search text, date filtering, weighted RRF, `backfill` | done (eval in `docs/eval/baseline-p1.7.md`) |
-| P3 | WhatsApp bot (official Cloud API): `imgsearch serve` | phase A (code and tests) done; phase B (real messages) pending |
 | P3 | Chat bot: `imgsearch bot` on Telegram (P3-T); WhatsApp built but parked (Meta account locked) | Telegram phase A (code and tests) done; phase B (real messages) pending |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
@@ -633,7 +632,6 @@ uv run imgsearch backfill folders            # record source_relpath and rewrite
 expression is in `imgsearch/store/dates.py`. See "Search (M5)" and "Query rewrite (M6)" for
 how a query's date becomes a filter.
 
-## WhatsApp bot (P3)
 ## Chat bot (P3)
 
 Search from your phone: message the bot and it replies with the best matching photos.

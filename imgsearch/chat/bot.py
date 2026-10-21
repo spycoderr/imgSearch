@@ -170,7 +170,8 @@ class ChatBot:
         if response.date_fallback and response.query.date_range:
             start, end = response.query.date_range
             self.messenger.send_text(
-                sender, f"No photos from {start} to {end}, so these are from any date."
+                sender,
+                f"No photos matched the dates {start} to {end}, so these are from all dates.",
             )
         if not results:
             self.last.pop(sender, None)
