@@ -27,6 +27,7 @@ named next to them.
 | M7 | Eval harness: recall@5 report and HTML contact sheet | done (baseline in `docs/eval/baseline.md`) |
 | P1.5-A | Pen-drive storage layout, `imgsearch import` (inbox → originals), `update`, `verify` | done |
 | P1.6 | Originals encrypted in S3 Glacier Instant Retrieval; pen drive as an LRU cache: `upload`, `evict`, `fetch` | done |
+| P1.7 | File names and phone folders as search text, date filtering, weighted RRF, `backfill` | done (eval in `docs/eval/baseline-p1.7.md`) |
 
 M2, M3 and M4 can be built in parallel once M1 lands.
 
@@ -230,8 +231,8 @@ uv run imgsearch eval                           # run every configuration, write
 uv run imgsearch eval-compare eval/runs/A eval/runs/B   # two runs' metrics side by side
 ```
 
-- **The query set** is `eval/queries.yaml`: 41 queries confirmed by the user, written from
-  looking at the photos. Each query is `{id, query, language, type, expected_image_ids,
+- **The query set** is `eval/queries.yaml`: 53 queries confirmed by the user, written from
+  looking at the photos (the 41 MVP queries plus 12 `u2-*` queries on phone photos). Each query is `{id, query, language, type, expected_image_ids,
   note}`. `language` is english, hinglish or hindi. `type` is scene, object, text, place
   or hard. Expected photos are image ids (SHA-256); a `# files:` comment lists the file
   names for people.
@@ -241,10 +242,14 @@ uv run imgsearch eval-compare eval/runs/A eval/runs/B   # two runs' metrics side
     thumbnails.
 - **`imgsearch eval`** loads the models once and runs 7 configurations: vector, text and
   hybrid, each with and without the rewrite, plus hybrid with the rewrite but without
-  captions (text search over OCR only).
+  captions (text search over OCR and file names).
+  - `imgsearch eval --no-date-filter` runs them with the date filter off, to measure it.
+    `results.json` records each query's parsed `date_range` and whether the filter was used
+    or fell back; `meta.json` records the filter setting, `signal_weights` and
+    `per_retriever_k`.
   - Each query is rewritten once per run, and every rewrite-on configuration uses that
     rewrite.
-  - It takes about 90 s for 41 queries.
+  - It takes about 95 s for 53 queries.
 - **Metrics,** per query, averaged overall, by language and by type:
   - hit@5: any expected photo in the top 5.
   - recall@5: expected photos found ÷ min(5, number expected).
@@ -260,8 +265,9 @@ uv run imgsearch eval-compare eval/runs/A eval/runs/B   # two runs' metrics side
 - **Privacy:** `eval/runs/` holds personal photos and is git-ignored. Never commit or share
   its contents. The committed numbers are in `docs/eval/baseline.md`.
 - **Results:** the MVP baseline is in `docs/eval/baseline.md`, and what it means is in
-  `docs/mvp-summary.md`. On this set vector+rw is best (recall@5 0.98, against 0.87 for
-  hybrid+rw).
+  `docs/mvp-summary.md`. On the MVP set vector+rw was best (recall@5 0.98, against 0.87 for
+  hybrid+rw). The P1.7 before/after on 53 queries is in `docs/eval/baseline-p1.7.md`:
+  vector+rw 0.79 (old 41: 0.88, new 12: 0.46), hybrid+rw 0.72.
 - Re-run `imgsearch eval` after any model, prompt, config or Ollama change. Compare with
   `eval-compare`. Don't run it during a caption run (memory, see "Search (M5)").
 
@@ -354,9 +360,18 @@ prints it as JSON, followed by the time taken. `imgsearch search` calls it first
   A cold call takes about 5–9 s, a warm one about 1.7 s (see `docs/benchmarks.md`).
 - `eval/rewrite_examples.yaml` holds 21 example queries (11 Hinglish, 5 Devanagari,
   5 English; M5 added "kal wali shaadi ki photos") with hand-written expected rewrites; `docs/reports/M6.md` shows the outputs.
-- `date_range` is kept only if the query has a digit-based year or date (`2019`, `15/08`,
-  `२०१९`); a date the model infers from "kal" or "last Diwali" is dropped (M5, review W1).
-  The prompt's `{today}` placeholder is filled with today's date.
+- **Dates (P1.7).** The prompt's `{today}` placeholder is filled with today's weekday and
+  date and the seven days before it, yesterday marked "(yesterday, kal)", so the model can
+  resolve "15-16 sept", "kal", "aaj", "pichle hafte" or "pichle mahine". A month or day without
+  a year means the most recent one.
+  - **Weekdays are worked out in code**, not by the model (it got them wrong): a query naming
+    one weekday ("on saturday", "shanivar", "मंगलवार") gets the most recent such day before
+    today. The words are in `models.rewriter.weekdays`.
+  - **Date guard (review W1, widened):** `date_range` is kept only if the query names a date:
+    a digit year or day/month (`2019`, `15/08`, `२०१९`), or a word from
+    `models.rewriter.date_words` (months, "yesterday", "kal", "aaj", "pichle", "last week",
+    Hindi forms…) or a weekday word, matched as whole words. A date the model infers from
+    "last Diwali" is still dropped.
 
 ## Search (M5)
 
@@ -380,8 +395,10 @@ or OCR text names something the image alone doesn't show, e.g. "Jaipur ka kila" 
 Amber Fort panorama 1st in hybrid and 6th with vector alone.
 
 Each retriever returns up to `search.per_retriever_k` (10) images. The rankings are merged
-with Reciprocal Rank Fusion: score = Σ 1 / (`search.rrf_k` + rank), with `rrf_k` = 60. With
-one retriever, that keeps its order. Ties go to the better single rank, then the image id.
+with weighted Reciprocal Rank Fusion: score = Σ weight / (`search.rrf_k` + rank), with
+`rrf_k` = 60 and each signal's weight from `search.signal_weights` (both 1.0, i.e. plain RRF;
+P1.7 tried text at 0.5 and 0.25, see `docs/eval/baseline-p1.7.md`). With one retriever, that
+keeps its order. Ties go to the better single rank, then the image id.
 The top `--k` (default `search.top_k`, 5) are printed. An example in hybrid mode:
 
 ```
@@ -399,6 +416,14 @@ Each result shows the rank, the fused score, the original's path (relative to
 ~100 characters of the caption. If Ollama is down or the reply is invalid, the query is
 searched as given, and the first line says `rewrite skipped: <reason>`.
 
+- **Dates (P1.7).** When the rewrite finds a date, every retriever keeps only photos from
+  those days (inclusive). A photo's date is its EXIF `taken_at`, else its file date
+  (`file_mtime`). A line under `signals:` says `dates: 2026-09-15 to 2026-09-16`. If no photo
+  matches, search shows results from all dates and says `dates: no photos from … ; showing
+  results from all dates`. `--no-date-filter` turns the filter off.
+- **File names (P1.7).** Full-text search also matches words from each photo's file name and
+  phone folder ("Screenshots", "Adobe Scan Exports", "Signature Nilabh black_1"), so
+  `--signals vector,text` finds documents by name. See "File names, dates and backfills".
 - `--no-rewrite` searches the query as given. `--signals text` uses full-text search only;
   `--signals vector,text` uses both. `--signals text --no-rewrite` loads no model and needs no Ollama
   (about 0.4 s).
@@ -441,7 +466,7 @@ volume isn't mounted. **Always eject the drive before unplugging it** (Finder, o
 
 ```sh
 uv run imgsearch import    # inbox -> originals_root only
-uv run imgsearch update    # import, then ingest, embed, ocr (no captions)
+uv run imgsearch update    # import, then ingest, embed, ocr, filename (no captions)
 uv run imgsearch verify    # check every image's files
 ```
 
@@ -464,7 +489,7 @@ A failure on one file is listed with its path and doesn't stop the others; the i
 is kept, and the command exits 1. Running it again with nothing new does nothing. `import`
 is the only code that adds files under `originals_root`.
 
-**`update`** runs `import`, then the `ingest`, `embed` and `ocr` stages through the runner,
+**`update`** runs `import`, then the `ingest`, `embed`, `ocr` and `filename` stages through the runner,
 and prints each step's counts. Captions are a separate, slow background job:
 `uv run imgsearch run caption`.
 
@@ -563,4 +588,46 @@ uv run imgsearch status               # adds "s3:" and "cache:" lines
   and thumbnail) and says how many it skipped; `restore-check` covers the S3 side. It reports
   a missing or undecryptable DB copy as a failure (after the originals' results); offline, it
   prints what it checked, then `restore-check: stopped early: ...`, and exits 1.
+
+## File names, dates and backfills (P1.7)
+
+**File names as text.** The `filename` stage (no model, part of `update` and
+`imgsearch run filename`) writes one full-text row per photo of kind `filename`:
+
+- The words come from the photo's inbox path, e.g. `Screenshots/Screenshot_20260327-171258_Gmail.png`
+  gives `screenshots screenshot gmail`. If the inbox path isn't known, they come from the
+  original's path under `originals_root`.
+- The text is split on anything that isn't a letter or digit, at letter/digit boundaries and
+  at camelCase (`WhatsApp` gives `whatsapp whats app`). Pure numbers, single characters and
+  the camera prefixes `img dsc pxl hdr wa vid portrait` are dropped.
+- Camera names (`IMG_20230501_123456.jpg`) give no words; that's expected.
+- The text retriever searches these rows with OCR and captions. The eval's "no captions"
+  setting keeps them.
+
+**What `import` records** (migration `004_source_and_mtime.sql`): `images.source_relpath`, the
+path inside the inbox (keeps the phone folder, which `YYYY/MM/` filing loses), and
+`images.file_mtime`, the file's modification time as naive local time.
+
+**Backfills for photos imported before P1.7** (both need the pen drive; run once):
+
+```sh
+uv run imgsearch backfill mtime              # file_mtime from the originals on the pen drive
+uv run imgsearch backfill folders --dry-run  # match against Syncthing's index, write nothing
+uv run imgsearch backfill folders            # record source_relpath and rewrite filename text
+```
+
+- `backfill mtime` fills only empty `file_mtime`. Evicted originals are skipped and counted:
+  `imgsearch fetch` them first if they matter. Fetch restores the original mtime.
+- `backfill folders` asks Syncthing's REST API (`syncthing.url` in `config.yaml`) for each
+  inbox folder's global index (`/rest/db/browse`). Each photo is matched by file name and size.
+  - Only a unique match is used. Ambiguous ones, ones not in Syncthing, and evicted ones are
+    counted and skipped.
+  - It sends only GET requests and never changes Syncthing's config or folders.
+  - It needs the Mac's Syncthing API key as `SYNCTHING_API_KEY` in `.env`. Copy it from the
+    Mac's Syncthing GUI → Actions → Settings → General, not from the phone app, whose key is
+    different.
+
+**Dates.** A photo's date for search is `taken_at` (EXIF), else `file_mtime`; the one SQL
+expression is in `imgsearch/store/dates.py`. See "Search (M5)" and "Query rewrite (M6)" for
+how a query's date becomes a filter.
 

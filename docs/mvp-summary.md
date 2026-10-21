@@ -199,3 +199,27 @@ Open decisions for the user:
    embed and OCR. Search works without captions, and the default (vector + rewrite) doesn't
    use them. Captions still feed the hybrid mode's text search, which is where place names
    like "Amber Fort in Jaipur" come from (see `docs/reports/M7.1.md`).
+
+## P1.7 addendum: search default after file names and dates
+
+2026-10-21 · Applied the rule in `docs/acceptance/P1.7.md` item 15. Numbers are in `docs/eval/baseline-p1.7.md`
+(53 queries: the 41 MVP queries plus 12 user-written `u2-*` queries on 1,442 photos).
+
+1. **Default stays vector + rewrite, now with the date filter on.**
+   - Rule: hybrid becomes the default only if it beats vector+rw on the new 12 without dropping the old 41 by
+     more than 0.02 recall@5.
+   - vector+rw after P1.7: recall@5 0.88 on the old 41, 0.46 on the new 12 (before: 0.87 and 0.33).
+   - hybrid+rw, equal weights: 0.80 / 0.48. Better on the new 12, but 0.08 worse on the old 41.
+   - hybrid+rw, text weight 0.5: 0.84 / 0.46; text weight 0.25: 0.84 / 0.42. Neither beats 0.46.
+   - So `search.default_signals` stays `[vector]` and `search.signal_weights` stays equal (1.0, 1.0).
+2. **Date filter on.** It changes one query (`u2-birthday`, 0 → 1.00) and none for the worse. When nothing
+   falls in the range, search shows all dates and says so (`u2-bbq-nation`). `--no-date-filter` turns it off.
+3. **Open for the user: hybrid without captions.** Text search over OCR and file names only (no captions),
+   merged with vector at text weight 0.5, scored 0.87 / 0.50 (old 41 −0.01, new 12 +0.04). That passes the
+   rule's numbers, but it isn't one of the settings the rule names, the gain is half of one query
+   (`u2-signature`, found by its file name), and making it a default would need a new setting (text kinds per
+   signal). Worth re-checking on the P2 library, where captions will be rare.
+
+**Caveat:** 53 queries on one library. One new query moves the new-12 average by up to 0.08, and the
+weights were tuned and measured on the same queries. File names help hybrid mostly (signatures, scans); the
+default vector search gains from the dates and the rewrite only.
