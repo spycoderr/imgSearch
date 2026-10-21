@@ -36,6 +36,10 @@ class CaptionerConfig(_Strict):
     max_pixels: int  # images are downscaled to at most this area before captioning
 
 
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+Weekday = Literal["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
 class RewriterConfig(_Strict):
     name: str
     url: str
@@ -44,6 +48,7 @@ class RewriterConfig(_Strict):
     # Words and phrases that name a date (month, weekday, "kal", "last week", ...). The
     # model's date_range is kept only if the query has a digit date or one of these.
     date_words: list[str]
+    weekdays: dict[Weekday, list[str]]  # the words for each day, in any language
 
     @field_validator("prompt")
     @classmethod
@@ -55,11 +60,22 @@ class RewriterConfig(_Strict):
     @field_validator("date_words")
     @classmethod
     def _lowercase_words(cls, value: list[str]) -> list[str]:
-        # NFC, so a nukta letter typed either way (फ़ or फ + ़) compares equal.
-        words = [unicodedata.normalize("NFC", " ".join(w.lower().split())) for w in value]
-        if not all(words):
-            raise ValueError("date_words must not contain empty entries")
-        return words
+        return _date_words(value, "date_words")
+
+    @field_validator("weekdays")
+    @classmethod
+    def _all_weekdays(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        if set(value) != set(WEEKDAYS):
+            raise ValueError("weekdays must list words for each of monday ... sunday")
+        return {day: _date_words(words, "weekdays") for day, words in value.items()}
+
+
+def _date_words(value: list[str], field: str) -> list[str]:
+    # NFC, so a nukta letter typed either way (फ़ or फ + ़) compares equal.
+    words = [unicodedata.normalize("NFC", " ".join(w.lower().split())) for w in value]
+    if not all(words):
+        raise ValueError(f"{field} must not contain empty entries")
+    return words
 
 
 class OcrConfig(_Strict):

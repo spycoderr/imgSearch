@@ -3,13 +3,14 @@
 import logging
 import re
 import unicodedata
-from collections.abc import Collection
-from datetime import date
+from collections.abc import Collection, Mapping
+from datetime import date, timedelta
+from itertools import chain
 
 import httpx
 from pydantic import BaseModel, ValidationError, field_validator
 
-from imgsearch.config import RewriterConfig
+from imgsearch.config import WEEKDAYS, RewriterConfig
 from imgsearch.interfaces import ParsedQuery
 from imgsearch.search.text import query_words
 
@@ -52,15 +53,38 @@ OUTPUT_SCHEMA = RewriteOutput.model_json_schema()
 _DATE_IN_QUERY = re.compile(r"(?<!\d)(?:(?:19|20)\d\d|\d{1,2}[./-]\d{1,2})(?!\d)")
 
 
+def all_date_words(config: RewriterConfig) -> list[str]:
+    """`date_words` plus every weekday word."""
+    return [*config.date_words, *chain(*config.weekdays.values())]
+
+
+def weekday_date(
+    query: str, weekdays: Mapping[str, Collection[str]], today: date | None = None
+) -> date | None:
+    """The day a query means by a weekday ("on saturday", "shanivar ko"): the most recent
+    one before today. None if the query names no weekday, several, or also has a digit
+    date ("saturday 15/08"), which the model's range then covers."""
+    words = f" {' '.join(query_words(unicodedata.normalize('NFC', query).lower()))} "
+    named = {day for day, names in weekdays.items() if any(f" {n} " in words for n in names)}
+    if len(named) != 1 or _DATE_IN_QUERY.search(_ascii_digits(query)):
+        return None
+    today = today or date.today()
+    back = (today.weekday() - WEEKDAYS.index(named.pop())) % 7 or 7
+    return today - timedelta(days=back)
+
+
+def _ascii_digits(query: str) -> str:
+    return "".join(
+        str(unicodedata.decimal(c)) if unicodedata.decimal(c, None) is not None else c
+        for c in query
+    )
+
+
 def mentions_date(query: str, date_words: Collection[str]) -> bool:
     """True if the query names a date: a digit-based year or day/month (digits of any
     script count, २०१९), or one of `date_words` (lowercase words or phrases such as
     "sept", "kal", "last week"), matched as whole words in any case."""
-    ascii_digits = "".join(
-        str(unicodedata.decimal(c)) if unicodedata.decimal(c, None) is not None else c
-        for c in query
-    )
-    if _DATE_IN_QUERY.search(ascii_digits):
+    if _DATE_IN_QUERY.search(_ascii_digits(query)):
         return True
     words = f" {' '.join(query_words(unicodedata.normalize('NFC', query).lower()))} "
     return any(f" {phrase} " in words for phrase in date_words)
@@ -79,10 +103,12 @@ class OllamaRewriter:
         except (httpx.HTTPError, ValidationError) as err:
             log.warning("query rewrite failed, using the query as given: %s", err)
             return ParsedQuery(english=query, original=query, rewrite_error=_reason(err))
-        if output.date_range and not mentions_date(query, self.config.date_words):
+        if output.date_range and not mentions_date(query, all_date_words(self.config)):
             # The model invents dates, e.g. from "last Diwali" (review item W1).
             log.info("dropping date_range %s: the query names no date", output.date_range)
             output.date_range = None
+        if day := weekday_date(query, self.config.weekdays):
+            output.date_range = DateRange(start=day, end=day)
         return ParsedQuery(
             english=output.english,
             original=query,
@@ -115,9 +141,19 @@ class OllamaRewriter:
         return RewriteOutput.model_validate_json(content)
 
 
-def system_prompt(prompt: str) -> str:
-    """The configured prompt with its `{today}` placeholder set to today's ISO date."""
-    return prompt.replace("{today}", date.today().isoformat())
+def system_prompt(prompt: str, today: date | None = None) -> str:
+    """The configured prompt with `{today}` set to today's weekday and ISO date, followed by
+    the seven days before it, yesterday labelled. With the list qwen2.5:7b gets "kal",
+    "aaj", "last week" and "last month" right; weekdays it still gets wrong, so
+    `weekday_date` overrides those."""
+    today = today or date.today()
+    days = [_day(today - timedelta(days=n)) for n in range(1, 8)]
+    days[0] += " (yesterday, kal)"
+    return prompt.replace("{today}", f"{_day(today)}. The seven days before it: {', '.join(days)}")
+
+
+def _day(day: date) -> str:
+    return f"{day:%A} {day.isoformat()}"
 
 
 def _reason(err: Exception) -> str:

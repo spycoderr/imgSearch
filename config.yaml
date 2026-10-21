@@ -54,8 +54,8 @@ models:
         "15 August", "15-16 sept"), a weekday ("on saturday") or a relative day
         ("yesterday", "kal", "last week", "pichle mahine"). Return {"start": "YYYY-MM-DD",
         "end": "YYYY-MM-DD"} covering it, worked out from today's date. A day or month
-        without a year is its most recent one on or before today; a weekday is the most
-        recent one before today; "kal" means yesterday. Otherwise null.
+        without a year is its most recent one on or before today; a weekday is the day
+        with that name in the seven days listed above; "kal" means yesterday. Otherwise null.
 
       Rules:
       - Use only what the query says. Never add people, places, dates, objects or
@@ -75,22 +75,31 @@ models:
     # or one of these words or phrases (matched as whole words, any case); otherwise the
     # model invented it (review W1).
     date_words: [
-      # English months and weekdays
+      # English months
       january, february, march, april, may, june, july, august, september, october,
       november, december, jan, feb, mar, apr, jun, jul, aug, sep, sept, oct, nov, dec,
-      monday, tuesday, wednesday, thursday, friday, saturday, sunday, weekend,
+      weekend,
       # English relative words
       yesterday, today, tonight, ago, last week, last month, last year, this week,
       this month, this year,
       # Hinglish
       kal, aaj, parso, parson, pichle, pichhle, pichla, pichhla, pichli, hafte, hafta,
-      mahine, mahina, saal, somvar, somwar, mangalvar, mangalwar, budhvar, budhwar,
-      guruvar, guruwar, shukravar, shukrawar, shanivar, shaniwar, ravivar, raviwar, itwar,
+      mahine, mahina, saal,
       # Hindi
       कल, आज, परसों, पिछले, पिछला, पिछली, हफ्ते, हफ़्ते, महीने, साल, जनवरी, फरवरी, फ़रवरी,
       मार्च, अप्रैल, मई, जून, जुलाई, अगस्त, सितंबर, सितम्बर, अक्टूबर, नवंबर, नवम्बर, दिसंबर,
-      दिसम्बर, सोमवार, मंगलवार, बुधवार, गुरुवार, शुक्रवार, शनिवार, रविवार,
+      दिसम्बर,
     ]
+    # Weekdays are worked out in code, not by the model: the most recent such day before
+    # today (qwen2.5:7b got them wrong in the P1.7 eval). They also count as date words.
+    weekdays:
+      monday: [monday, mon, somvar, somwar, सोमवार]
+      tuesday: [tuesday, tue, tues, mangalvar, mangalwar, मंगलवार]
+      wednesday: [wednesday, wed, budhvar, budhwar, बुधवार]
+      thursday: [thursday, thu, thur, thurs, guruvar, guruwar, गुरुवार]
+      friday: [friday, fri, shukravar, shukrawar, शुक्रवार]
+      saturday: [saturday, sat, shanivar, shaniwar, शनिवार]
+      sunday: [sunday, sun, ravivar, raviwar, itwar, रविवार]
   ocr:  # Apple Vision via ocrmac; text in photos is mostly English (plan D6)
     recognition_level: accurate
     languages: ["en-US"]

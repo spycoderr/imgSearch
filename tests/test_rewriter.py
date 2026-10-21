@@ -12,7 +12,14 @@ from typer.testing import CliRunner
 from imgsearch.cli import app
 from imgsearch.config import Config, RewriterConfig, load_config
 from imgsearch.interfaces import ParsedQuery
-from imgsearch.models.rewriter import OUTPUT_SCHEMA, OllamaRewriter, mentions_date, system_prompt
+from imgsearch.models.rewriter import (
+    OUTPUT_SCHEMA,
+    OllamaRewriter,
+    all_date_words,
+    mentions_date,
+    system_prompt,
+    weekday_date,
+)
 
 QUERY = "mummy ke saath Goa wali pizza ki photo"
 GOOD = {
@@ -145,7 +152,7 @@ def test_reason_names_the_error(config: Config):
     ],
 )
 def test_mentions_date(config: Config, query: str):
-    assert mentions_date(query, config.models.rewriter.date_words)
+    assert mentions_date(query, all_date_words(config.models.rewriter))
 
 
 @pytest.mark.parametrize(
@@ -162,7 +169,7 @@ def test_mentions_date(config: Config, query: str):
     ],
 )
 def test_mentions_no_date(config: Config, query: str):
-    assert not mentions_date(query, config.models.rewriter.date_words)
+    assert not mentions_date(query, all_date_words(config.models.rewriter))
 
 
 def test_date_words_are_matched_as_whole_phrases():
@@ -204,7 +211,16 @@ def test_prompt_has_todays_date(config: Config):
     assert config.models.rewriter.prompt.count("{today}") == 1
     prompt = system_prompt(config.models.rewriter.prompt)
     assert "{today}" not in prompt
-    assert f"Today's date is {date.today().isoformat()}." in prompt
+    assert f"Today's date is {date.today():%A} {date.today().isoformat()}." in prompt
+
+
+def test_prompt_lists_the_last_seven_days_with_weekdays(config: Config):
+    prompt = system_prompt(config.models.rewriter.prompt, today=date(2026, 10, 21))
+    assert (
+        "Today's date is Wednesday 2026-10-21. The seven days before it: Tuesday 2026-10-20"
+        " (yesterday, kal), Monday 2026-10-19, Sunday 2026-10-18, Saturday 2026-10-17,"
+        " Friday 2026-10-16, Thursday 2026-10-15, Wednesday 2026-10-14." in prompt
+    )
 
 
 def test_prompt_without_placeholder_is_rejected(config: Config):
@@ -247,3 +263,49 @@ def test_cli_prints_json_and_time(config_path: Path):
         "place": None,
     }
     assert timing.strip().startswith("took ")
+
+
+WEDNESDAY = date(2026, 10, 21)
+
+
+@pytest.mark.parametrize(
+    ("query", "day"),
+    [
+        ("Give me images from barbecue nation outing on saturday", date(2026, 10, 17)),
+        ("photos from last Friday", date(2026, 10, 16)),
+        ("shanivar ki party", date(2026, 10, 17)),
+        ("मंगलवार की फोटो", date(2026, 10, 20)),
+        ("on wednesday", date(2026, 10, 14)),  # today's weekday means a week ago
+        ("monday", date(2026, 10, 19)),
+    ],
+)
+def test_weekday_is_the_most_recent_one_before_today(config: Config, query: str, day: date):
+    assert weekday_date(query, config.models.rewriter.weekdays, WEDNESDAY) == day
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["birthday photos", "saturday 15/08", "monday or tuesday", "sunset at the beach"],
+)
+def test_no_weekday_or_ambiguous_leaves_the_range_to_the_model(config: Config, query: str):
+    assert weekday_date(query, config.models.rewriter.weekdays, WEDNESDAY) is None
+
+
+def test_weekday_overrides_the_models_range(config: Config):
+    wrong = {**DATED, "date_range": {"start": "2026-10-21", "end": "2026-10-21"}}
+    rewriter = make_rewriter(config, lambda _: chat_reply(json.dumps(wrong)))
+    parsed = rewriter.rewrite("barbecue nation outing on saturday")
+    assert parsed.date_range is not None
+    day = date.fromisoformat(parsed.date_range[0])
+    assert parsed.date_range[0] == parsed.date_range[1]
+    assert day.weekday() == 5 and 1 <= (date.today() - day).days <= 7
+
+
+@pytest.mark.parametrize("missing", ["sunday", None])
+def test_weekdays_config_needs_all_seven_days(config: Config, missing: str | None):
+    data = config.models.rewriter.model_dump()
+    weekdays = {d: w for d, w in data["weekdays"].items() if d != missing}
+    if missing is None:
+        weekdays["funday"] = ["funday"]
+    with pytest.raises(ValueError, match="weekdays"):
+        RewriterConfig.model_validate({**data, "weekdays": weekdays})
