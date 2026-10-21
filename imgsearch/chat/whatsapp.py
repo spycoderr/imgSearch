@@ -84,19 +84,43 @@ class Incoming:
 
 
 def incoming_messages(payload: Mapping[str, Any], phone_number_id: str) -> list[Incoming]:
-    """The messages in a webhook payload sent to our number. Status updates are skipped."""
+    """The messages in a webhook payload sent to our number."""
     found = []
-    for entry in payload.get("entry", []):
-        for change in entry.get("changes", []):
-            value = change["value"]
-            if change.get("field") != "messages":
-                continue
-            if value.get("metadata", {}).get("phone_number_id") != phone_number_id:
-                continue
-            for m in value.get("messages", []):
-                text = m["text"]["body"] if m["type"] == "text" else None
-                found.append(Incoming(m["id"], m["from"], m["type"], text))
+    for value in _values(payload, phone_number_id):
+        for m in value.get("messages", []):
+            text = m["text"]["body"] if m["type"] == "text" else None
+            found.append(Incoming(m["id"], m["from"], m["type"], text))
     return found
+
+
+@dataclass(frozen=True)
+class DeliveryStatus:
+    """A status callback for a message we sent. `recipient_id` (a phone number) is not kept."""
+
+    message_id: str
+    status: str  # sent, delivered, read, played or failed
+    errors: tuple[tuple[int, str], ...]  # (code, title) for each error; empty unless failed
+
+
+def delivery_statuses(payload: Mapping[str, Any], phone_number_id: str) -> list[DeliveryStatus]:
+    """The status callbacks in a webhook payload for our number."""
+    found = []
+    for value in _values(payload, phone_number_id):
+        for s in value.get("statuses", []):
+            errors = tuple((e["code"], e.get("title", "")) for e in s.get("errors", []))
+            found.append(DeliveryStatus(s["id"], s["status"], errors))
+    return found
+
+
+def _values(payload: Mapping[str, Any], phone_number_id: str) -> list[Mapping[str, Any]]:
+    """Each `messages` change's value addressed to our phone number id."""
+    return [
+        change["value"]
+        for entry in payload.get("entry", [])
+        for change in entry.get("changes", [])
+        if change.get("field") == "messages"
+        and change["value"].get("metadata", {}).get("phone_number_id") == phone_number_id
+    ]
 
 
 class GraphError(Exception):

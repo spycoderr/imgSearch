@@ -30,10 +30,12 @@ from imgsearch.chat.bot import (
 )
 from imgsearch.chat.service import LazySearcher, Worker
 from imgsearch.chat.whatsapp import (
+    DeliveryStatus,
     GraphClient,
     GraphError,
     Incoming,
     Secrets,
+    delivery_statuses,
     incoming_messages,
     load_secrets,
     signature_ok,
@@ -270,6 +272,41 @@ def test_incoming_messages():
     statuses["entry"][0]["changes"][0]["value"]["statuses"] = [{"id": "wamid.out"}]
     assert incoming_messages(statuses, PHONE_ID) == []
     assert incoming_messages(payload(text_message("hi"), phone_id="999"), PHONE_ID) == []
+
+
+def status_payload(*statuses: dict, phone_id: str = PHONE_ID) -> dict:
+    body = payload(phone_id=phone_id)
+    value = body["entry"][0]["changes"][0]["value"]
+    del value["messages"]
+    value["statuses"] = list(statuses)
+    return body
+
+
+SENT = {"id": "wamid.out1", "status": "sent", "timestamp": "1", "recipient_id": SENDER}
+FAILED = {
+    "id": "wamid.out2",
+    "status": "failed",
+    "timestamp": "2",
+    "recipient_id": SENDER,
+    "errors": [
+        {
+            "code": 131049,
+            "title": "This message was not delivered to maintain healthy ecosystem engagement.",
+            "message": "This message was not delivered to maintain healthy ecosystem engagement.",
+            "error_data": {"details": "In order to maintain a healthy ecosystem engagement."},
+        }
+    ],
+}
+
+
+def test_delivery_statuses():
+    title = FAILED["errors"][0]["title"]
+    assert delivery_statuses(status_payload(SENT, FAILED), PHONE_ID) == [
+        DeliveryStatus("wamid.out1", "sent", ()),
+        DeliveryStatus("wamid.out2", "failed", ((131049, title),)),
+    ]
+    assert delivery_statuses(status_payload(SENT, phone_id="999"), PHONE_ID) == []
+    assert delivery_statuses(payload(text_message("hi")), PHONE_ID) == []
 
 
 # ---- Graph client ----
@@ -671,3 +708,16 @@ def test_logs_hold_no_message_text_or_numbers(service, graph, caplog):
     assert "wamid.log" in caplog.text  # ids and counts are fine
     for secret in (QUERY, SENDER, PHONE_ID, "IMG_0001", "test-token", "test-app-secret"):
         assert secret not in caplog.text
+
+
+def test_status_callbacks_are_logged_without_the_recipient(service, graph, caplog):
+    service.gate.set()
+    with caplog.at_level(logging.INFO), TestClient(service.app) as client:
+        response = service.post(client, status_payload(SENT, FAILED))
+        assert response.status_code == 200
+    assert "message wamid.out1 sent" in caplog.text
+    assert "message wamid.out2 failed (error 131049: This message was not delivered" in caplog.text
+    [failed] = [r for r in caplog.records if "wamid.out2" in r.getMessage()]
+    assert failed.levelno == logging.WARNING
+    assert SENDER not in caplog.text
+    assert graph.requests == [] and service.rewriter.queries == []

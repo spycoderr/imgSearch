@@ -1,9 +1,10 @@
 """The HTTP side of the bot: a thin FastAPI app with the WhatsApp webhook and `/health`.
 
 - `GET /webhook`: Meta's verification handshake (`hub.verify_token`, echo `hub.challenge`).
-- `POST /webhook`: checks `X-Hub-Signature-256` (401 if wrong), drops senders not on the
-  allowlist and repeated message ids, queues the rest and answers 200 at once (Meta retries
-  slow or failed deliveries). The worker thread does the searching.
+- `POST /webhook`: checks `X-Hub-Signature-256` (401 if wrong), logs status callbacks for
+  messages we sent (sent, delivered, read, failed with error codes), drops senders not on
+  the allowlist and repeated message ids, queues the rest and answers 200 at once (Meta
+  retries slow or failed deliveries). The worker thread does the searching.
 - `GET /health`: for the user on the Mac; 404 through the tunnel.
 
 No other routes: FastAPI's docs and schema pages are off, and no files are served.
@@ -21,7 +22,13 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse
 
 from imgsearch.chat.service import Worker
-from imgsearch.chat.whatsapp import Secrets, incoming_messages, signature_ok
+from imgsearch.chat.whatsapp import (
+    DeliveryStatus,
+    Secrets,
+    delivery_statuses,
+    incoming_messages,
+    signature_ok,
+)
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +49,16 @@ class SeenIds:
         if len(self.ids) > self.size:
             self.ids.popitem(last=False)
         return True
+
+
+def log_status(status: DeliveryStatus) -> None:
+    """Log a status callback: id, status and error codes and titles (Meta's generic text),
+    never the recipient. A failure is a warning: it is the only sign a reply didn't arrive."""
+    if status.errors:
+        errors = "; ".join(f"error {code}: {title}" for code, title in status.errors)
+        log.warning("message %s %s (%s)", status.message_id, status.status, errors)
+    else:
+        log.info("message %s %s", status.message_id, status.status)
 
 
 def create_app(secrets: Secrets, worker: Worker, status: Callable[[], dict[str, Any]]) -> FastAPI:
@@ -76,8 +93,11 @@ def create_app(secrets: Secrets, worker: Worker, status: Callable[[], dict[str, 
         if not signature_ok(secrets.app_secret, body, request.headers.get("x-hub-signature-256")):
             log.warning("webhook: bad or missing signature, %d bytes ignored", len(body))
             raise HTTPException(status_code=401)
+        payload = json.loads(body)
+        for status in delivery_statuses(payload, secrets.phone_number_id):
+            log_status(status)
         not_allowed = repeated = 0
-        for message in incoming_messages(json.loads(body), secrets.phone_number_id):
+        for message in incoming_messages(payload, secrets.phone_number_id):
             if message.sender not in secrets.allowed_senders:
                 not_allowed += 1
             elif not seen.first_time(message.message_id):
