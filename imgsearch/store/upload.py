@@ -7,7 +7,8 @@ originals with a verified copy are skipped.
 
 The DB copy is taken with SQLite's online backup API, encrypted the same way, and put at
 `s3.db_key`; bucket versioning keeps the older copies. It is skipped when the DB hasn't
-changed since the last copy.
+changed since the last copy. `update` uploads the originals early and the DB copy last, so
+the copy includes that run's index (review R7).
 """
 
 import hashlib
@@ -30,14 +31,17 @@ class UploadResult:
     uploaded_bytes: int = 0  # encrypted bytes sent for those originals
     failed: list[tuple[str, str]] = field(default_factory=list)  # (orig_relpath, error)
     db: str | None = None  # what happened to the DB copy, e.g. "unchanged"
+    db_error: str | None = None  # why the DB copy failed; None if it didn't
     error: str | None = None  # why the run stopped early (offline, no key); None if it didn't
 
 
 @dataclass
 class RestoreCheck:
+    sampled: int = 0  # originals picked for the check
     checked: list[str] = field(default_factory=list)  # orig_relpath of originals that matched
     failed: list[tuple[str, str]] = field(default_factory=list)  # (orig_relpath, error)
     db: str = ""  # summary of the DB copy check
+    error: str | None = None  # why the check stopped early (offline); None if it didn't
 
 
 def now() -> str:
@@ -68,7 +72,21 @@ def upload(
     key: bytes,
     progress: Callable[[int], None] | None = None,
 ) -> UploadResult:
-    """Upload every original without a verified copy, then the DB copy.
+    """Upload every original without a verified copy, then the DB copy."""
+    result = upload_originals(config, conn, store, key, progress)
+    if result.error is None:
+        upload_db_copy(config, conn, store, key, result)
+    return result
+
+
+def upload_originals(
+    config: Config,
+    conn: sqlite3.Connection,
+    store: ObjectStore,
+    key: bytes,
+    progress: Callable[[int], None] | None = None,
+) -> UploadResult:
+    """Upload every original without a verified copy.
 
     `progress` is called with the number of originals tried so far, after each one.
 
@@ -88,10 +106,19 @@ def upload(
                 result.uploaded.append(row["orig_relpath"])
             if progress is not None:
                 progress(len(result.uploaded) + len(result.failed))
-        result.db = upload_db(conn, store, key, config.s3.db_key)
     except StoreUnavailable as e:
         result.error = str(e)
     return result
+
+
+def upload_db_copy(
+    config: Config, conn: sqlite3.Connection, store: ObjectStore, key: bytes, result: UploadResult
+) -> None:
+    """Upload the DB copy, recording the outcome in `result.db` or `result.db_error`."""
+    try:
+        result.db = upload_db(conn, store, key, config.s3.db_key)
+    except Exception as e:  # e.g. expired credentials: reported, and indexing goes on (R1)
+        result.db_error = f"{type(e).__name__}: {e}"
 
 
 def upload_original(
@@ -163,23 +190,43 @@ def restore_check(
 ) -> RestoreCheck:
     """Download, decrypt and hash-check `sample` random originals and the latest DB copy.
 
-    Nothing is written to disk.
+    Nothing is written to disk. A missing or unreadable DB copy is a failure like a bad
+    original. If the store becomes unreachable, the check stops there with `error` set.
     """
     result = RestoreCheck()
     rows = conn.execute(
         "SELECT i.id, i.orig_relpath FROM s3_copies s JOIN images i ON i.id = s.image_id"
         " WHERE s.verified_at IS NOT NULL"
     ).fetchall()
-    for row in random.sample(rows, min(sample, len(rows))):
+    picked = random.sample(rows, min(sample, len(rows)))
+    result.sampled = len(picked)
+    try:
+        for row in picked:
+            try:
+                download_original(conn, store, key, row["id"])
+            except StoreUnavailable:
+                raise
+            except Exception as e:  # report every bad copy, not just the first
+                result.failed.append((row["orig_relpath"], f"{type(e).__name__}: {e}"))
+            else:
+                result.checked.append(row["orig_relpath"])
         try:
-            download_original(conn, store, key, row["id"])
+            result.db, ok = _check_db_copy(config, store, key)
         except StoreUnavailable:
             raise
-        except Exception as e:  # report every bad copy, not just the first
-            result.failed.append((row["orig_relpath"], f"{type(e).__name__}: {e}"))
+        except Exception as e:  # missing or undecryptable: reported with the rest (R6)
+            result.db = f"FAILED: {type(e).__name__}: {e}"
+            result.failed.append((config.s3.db_key, f"{type(e).__name__}: {e}"))
         else:
-            result.checked.append(row["orig_relpath"])
+            if not ok:
+                result.failed.append((config.s3.db_key, result.db))
+    except StoreUnavailable as e:
+        result.error = str(e)
+    return result
 
+
+def _check_db_copy(config: Config, store: ObjectStore, key: bytes) -> tuple[str, bool]:
+    """Download, decrypt and check the latest DB copy: (summary, integrity_check is ok)."""
     data = decrypt(key, store.get(config.s3.db_key))
     with sqlite3.connect(":memory:") as copy:
         copy.deserialize(data)
@@ -187,13 +234,11 @@ def restore_check(
         images = copy.execute("SELECT COUNT(*) FROM images").fetchone()[0]
         copies = copy.execute("SELECT COUNT(*) FROM s3_copies").fetchone()[0]
     copy.close()
-    result.db = (
+    summary = (
         f"{len(data) / 1e6:.1f} MB, integrity_check {integrity}, {images} images,"
         f" {copies} S3 copies recorded"
     )
-    if integrity != "ok":
-        result.failed.append((config.s3.db_key, f"integrity_check: {integrity}"))
-    return result
+    return summary, integrity == "ok"
 
 
 def download_original(

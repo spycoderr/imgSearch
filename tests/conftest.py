@@ -76,6 +76,7 @@ class FakeObjectStore:
     def __init__(self) -> None:
         self.versions: dict[str, list[tuple[str, bytes, dict[str, str]]]] = {}
         self.offline = False  # every call raises StoreUnavailable
+        self.offline_after: int | None = None  # this many more calls succeed, then offline
         self.failing_keys: set[str] = set()  # puts to these keys fail
         self.puts = 0
 
@@ -119,6 +120,10 @@ class FakeObjectStore:
         return next((v for v in versions if v[0] == version_id), None)
 
     def _check(self) -> None:
+        if self.offline_after is not None:
+            if self.offline_after == 0:
+                self.offline = True
+            self.offline_after -= 1
         if self.offline:
             raise StoreUnavailable("S3 unreachable: test is offline")
 

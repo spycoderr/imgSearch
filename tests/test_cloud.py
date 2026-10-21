@@ -4,22 +4,34 @@ S3 is the in-memory `store` fixture; the Keychain is a fake `security` runner.
 """
 
 import hashlib
+import io
 import os
 import sqlite3
 import subprocess
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from typer.testing import CliRunner
 
 from imgsearch.cli import app
-from imgsearch.config import Config
+from imgsearch.config import Config, load_config
+from imgsearch.interfaces import Context, StoreUnavailable
+from imgsearch.sources.importer import import_inbox
+from imgsearch.stages.ingest import IngestStage
+from imgsearch.stages.runner import run_stage
 from imgsearch.stages.update import update
 from imgsearch.store.cache import evict, fetch
 from imgsearch.store.crypto import HEADER_SIZE, MAGIC, DecryptError, decrypt, encrypt
 from imgsearch.store.keychain import KeychainError, KeyMissing, create_key, read_key
 from imgsearch.store.status import set_status
-from imgsearch.store.upload import UploadResult, restore_check, upload
+from imgsearch.store.upload import (
+    UploadResult,
+    restore_check,
+    upload,
+    upload_db_copy,
+    upload_originals,
+)
 from imgsearch.store.verify import verify
 
 KEY = bytes(range(32))  # a test key; never a real one
@@ -27,16 +39,22 @@ MTIME_NS = 1_600_000_000_123_456_789
 
 
 def add_original(
-    config: Config, conn: sqlite3.Connection, name: str, size: int = 1000, ingested: bool = True
+    config: Config,
+    conn: sqlite3.Connection,
+    name: str,
+    size: int = 1000,
+    ingested: bool = True,
+    data: bytes | None = None,
 ) -> str:
-    """Write a random original under originals_root and register it. Returns its id.
+    """Write an original (random bytes unless `data`) under originals_root and register it.
+    Returns its id.
 
     Rows get increasing created_at in call order, so the first added is the least recently
     used.
     """
     path = config.originals_root / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = os.urandom(size)
+    data = os.urandom(size) if data is None else data
     path.write_bytes(data)
     os.utime(path, ns=(MTIME_NS, MTIME_NS))
     image_id = hashlib.sha256(data).hexdigest()
@@ -229,7 +247,7 @@ def test_update_uploads_after_import_and_keeps_indexing_when_offline(config: Con
         calls.append("upload")
         return upload(config, conn, store, KEY)
 
-    result = update(config, conn, [RecordingStage()], upload_step)
+    result = update(config, conn, [RecordingStage()], upload_step, lambda _: None)
 
     assert calls[:2] == ["upload", "load"] and sorted(calls[2:]) == ["a.jpg", "b.jpg"]
     assert result.uploaded.error == "S3 unreachable: test is offline"
@@ -237,14 +255,14 @@ def test_update_uploads_after_import_and_keeps_indexing_when_offline(config: Con
     assert result.stages["ingest"] == {"done": 2, "failed": 0}
 
     store.offline = False
-    assert update(config, conn, [], upload_step).not_in_s3 == 0
+    assert update(config, conn, [], upload_step, lambda _: None).not_in_s3 == 0
 
 
 def test_update_cli_without_a_key_still_indexes(config_path: Path, config: Config, conn):
     add_original(config, conn, "a.jpg", ingested=False)
     result = CliRunner().invoke(app, ["--config", str(config_path), "update"])
     # The original isn't a decodable image, so ingest fails it; the point is that it ran.
-    assert "upload: not run: no encryption key" in result.output
+    assert "upload skipped: no encryption key" in result.output
     assert "1 originals not yet in S3" in result.output
     assert "ingest: 1 processed" in result.output
 
@@ -411,3 +429,258 @@ def test_verify_skips_evicted_originals_but_checks_the_rest(
 
     fetch(config, conn, store, KEY, a)
     assert verify(config, conn).evicted == 0
+
+
+# ---- P1.6.1 review fixes (docs/reviews/P1.6.md, R1-R8) ----
+
+
+def jpeg_bytes(color: str = "red") -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 30), color).save(buffer, "JPEG")
+    return buffer.getvalue()
+
+
+def db_copy(store, config: Config) -> sqlite3.Connection:
+    copy = sqlite3.connect(":memory:")
+    copy.deserialize(decrypt(KEY, store.versions[config.s3.db_key][-1][1]))
+    return copy
+
+
+def test_r1_a_failing_db_copy_is_reported_and_update_still_indexes(config: Config, conn, store):
+    add_original(config, conn, "a.jpg", ingested=False)
+    store.failing_keys.add(config.s3.db_key)  # e.g. expired credentials: not StoreUnavailable
+
+    assert "OSError" in upload(config, conn, store, KEY).db_error  # reported, not raised
+
+    add_original(config, conn, "b.jpg", ingested=False)
+    stage = FakeIngest(config)
+    result = update(
+        config,
+        conn,
+        [stage],
+        lambda: upload_originals(config, conn, store, KEY),
+        lambda uploaded: upload_db_copy(config, conn, store, KEY, uploaded),
+    )
+
+    assert result.uploaded.uploaded == ["b.jpg"] and result.not_in_s3 == 0
+    assert result.uploaded.db_error.startswith("OSError")
+    assert result.stages["ingest"] == {"done": 2, "failed": 0}
+
+
+class FakeIngest:
+    """Records the images it runs on; touches nothing."""
+
+    name, requires = "ingest", []
+
+    def __init__(self, config: Config) -> None:
+        self.version = config.stages["ingest"]
+        self.seen: list[str] = []
+
+    def load(self, ctx):
+        pass
+
+    def run(self, image, ctx):
+        self.seen.append(image.orig_relpath)
+
+    def unload(self):
+        pass
+
+
+def test_r2_a_copy_of_an_evicted_photo_is_a_normal_duplicate(config: Config, conn, store):
+    image_id = add_original(config, conn, "2024/01/a.jpg")
+    upload(config, conn, store, KEY)
+    evict(config, conn, store, cap_gb=0)
+    inbox = config.inboxes[0]
+    inbox.mkdir(parents=True)
+    copy = inbox / "a-again.jpg"
+    copy.write_bytes(fetch_bytes(store, image_id))
+    os.utime(copy, (MTIME_NS / 1e9, MTIME_NS / 1e9))
+
+    result = import_inbox(config, conn)
+
+    assert (result.imported, result.duplicates, result.failed) == ([], 1, [])
+    assert not copy.exists()
+    assert not (config.originals_root / "2024/01/a.jpg").exists()  # import restores nothing
+
+
+def fetch_bytes(store, image_id: str) -> bytes:
+    return decrypt(KEY, store.versions[f"originals/{image_id}"][-1][1])
+
+
+def test_r3_ingest_fetches_an_evicted_original_and_evict_applies_the_cap_again(
+    config: Config, conn, store
+):
+    image_id = add_original(config, conn, "2024/01/a.jpg", data=jpeg_bytes())
+    upload(config, conn, store, KEY)
+    evict(config, conn, store, cap_gb=0)
+    path = config.originals_root / "2024/01/a.jpg"
+    assert not path.exists()
+    bumped = config.model_copy(update={"stages": {**config.stages, "ingest": "bumped"}})
+    opened: list[str] = []
+
+    def open_store(cfg: Config):
+        opened.append("store")
+        return KEY, store
+
+    counts = run_stage(IngestStage(bumped, open_store), Context(config=bumped, conn=conn))
+
+    assert counts == {"done": 1, "failed": 0} and opened == ["store"]
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == image_id
+    assert (bumped.derivatives_root / image_id[:2] / f"{image_id}.jpg").is_file()
+    again = evict(config, conn, None, cap_gb=0, dry_run=True)
+    assert [r for r, _ in again.removed] == ["2024/01/a.jpg"]
+
+
+def test_r3_ingest_opens_no_store_for_originals_on_the_drive(config: Config, conn):
+    add_original(config, conn, "a.jpg", data=jpeg_bytes())
+    bumped = config.model_copy(update={"stages": {**config.stages, "ingest": "bumped"}})
+
+    def no_store(cfg: Config):
+        raise AssertionError("the store must not be opened")
+
+    counts = run_stage(IngestStage(bumped, no_store), Context(config=bumped, conn=conn))
+    assert counts == {"done": 1, "failed": 0}
+
+
+def test_r4_evict_stops_cleanly_when_s3_goes_away_and_lists_what_it_did(
+    config: Config, conn, store
+):
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        add_original(config, conn, name)
+    upload(config, conn, store, KEY)
+    store.offline_after = 1  # the re-check of a.jpg works, then S3 is unreachable
+
+    result = evict(config, conn, store, cap_gb=0)
+
+    assert result.error == "S3 unreachable: test is offline"
+    assert [r for r, _ in result.removed] == ["a.jpg"]
+    assert sorted(p.name for p in config.originals_root.iterdir()) == ["b.jpg", "c.jpg"]
+
+
+def test_r4_fetch_offline_raises_store_unavailable_and_writes_nothing(config: Config, conn, store):
+    image_id = add_original(config, conn, "a.jpg")
+    upload(config, conn, store, KEY)
+    evict(config, conn, store, cap_gb=0)
+    store.offline = True
+
+    with pytest.raises(StoreUnavailable):
+        fetch(config, conn, store, KEY, image_id)
+    assert list(config.originals_root.iterdir()) == []
+
+
+def test_r4_restore_check_offline_mid_run_keeps_the_results_so_far(config: Config, conn, store):
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        add_original(config, conn, name)
+    upload(config, conn, store, KEY)
+    store.offline_after = 1  # one original downloads, then S3 is unreachable
+
+    result = restore_check(config, conn, store, KEY, sample=3)
+
+    assert result.error == "S3 unreachable: test is offline"
+    assert len(result.checked) == 1 and result.failed == [] and result.db == ""
+
+
+@pytest.fixture
+def unconfigured_path(config_path: Path) -> Path:
+    """The test config with s3.bucket naming a variable that is never set."""
+    text = config_path.read_text(encoding="utf-8")
+    text = text.replace("  bucket: test-bucket", "  bucket: ${IMGSEARCH_TEST_NEVER_SET}")
+    path = config_path.with_name("unconfigured.yaml")
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_r5_without_s3_settings_only_s3_commands_fail(
+    unconfigured_path: Path, config: Config, conn
+):
+    assert load_config(unconfigured_path).s3.bucket is None
+    add_original(config, conn, "a.jpg", ingested=False)
+    base = ["--config", str(unconfigured_path)]
+
+    def run(*args: str):
+        return CliRunner().invoke(app, [*base, *args])
+
+    status = run("status")
+    assert status.exit_code == 0 and "s3: 0 in S3 (verified), 1 not yet uploaded" in status.output
+    assert "verify: 0 of 1 images ok" in run("verify").output  # ran (a.jpg isn't ingested)
+
+    updated = run("update")
+    assert "upload skipped: S3 not configured" in updated.output
+    assert "ingest: 1 processed" in updated.output
+    assert "db copy" not in updated.output
+
+    for args in (["upload"], ["evict"], ["fetch", "a.jpg"], ["restore-check"]):
+        result = run(*args)
+        assert result.exit_code == 1, args
+        assert "S3 not configured" in result.output, args
+        assert isinstance(result.exception, SystemExit), args  # a message, not a traceback
+    assert run("evict", "--dry-run").exit_code == 0  # reads only the DB
+
+
+def test_r6_restore_check_reports_a_missing_or_unreadable_db_copy(config: Config, conn, store):
+    for name in ("a.jpg", "b.jpg"):
+        add_original(config, conn, name)
+    upload_originals(config, conn, store, KEY)  # no DB copy yet
+
+    missing = restore_check(config, conn, store, KEY, sample=5)
+    assert sorted(missing.checked) == ["a.jpg", "b.jpg"]
+    assert [k for k, _ in missing.failed] == [config.s3.db_key]
+    assert missing.db.startswith("FAILED: KeyError")
+
+    upload_db_copy(config, conn, store, KEY, UploadResult())
+    store.replace_bytes(config.s3.db_key, b"IMGS junk")
+    unreadable = restore_check(config, conn, store, KEY, sample=5)
+    assert sorted(unreadable.checked) == ["a.jpg", "b.jpg"]
+    assert unreadable.db.startswith("FAILED: DecryptError")
+
+
+def test_r7_update_uploads_the_db_copy_after_indexing(config: Config, conn, store):
+    image_id = add_original(config, conn, "a.jpg", ingested=False)
+    stage = FakeIngest(config)
+
+    result = update(
+        config,
+        conn,
+        [stage],
+        lambda: upload_originals(config, conn, store, KEY),
+        lambda uploaded: upload_db_copy(config, conn, store, KEY, uploaded),
+    )
+
+    assert result.uploaded.db.startswith("uploaded") and stage.seen == ["a.jpg"]
+    copy = db_copy(store, config)
+    state = copy.execute(
+        "SELECT state FROM stage_status WHERE image_id = ? AND stage = 'ingest'", (image_id,)
+    ).fetchone()
+    copy.close()
+    assert state == ("done",)  # the copy has this run's index
+
+
+def test_r7_update_skips_the_db_copy_when_the_originals_could_not_upload(
+    config: Config, conn, store
+):
+    add_original(config, conn, "a.jpg", ingested=False)
+    store.offline = True
+    calls: list[str] = []
+
+    def upload_db(uploaded: UploadResult) -> None:
+        calls.append("db")
+        if uploaded.error is None:
+            upload_db_copy(config, conn, store, KEY, uploaded)
+
+    result = update(
+        config,
+        conn,
+        [FakeIngest(config)],
+        lambda: upload_originals(config, conn, store, KEY),
+        upload_db,
+    )
+    assert calls == ["db"] and result.uploaded.db is None and result.uploaded.db_error is None
+
+
+def test_r8_restore_check_counts_what_it_sampled(config: Config, conn, store):
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        add_original(config, conn, name)
+    upload(config, conn, store, KEY)
+
+    result = restore_check(config, conn, store, KEY, sample=10)
+    assert result.sampled == 3 and len(result.checked) == 3

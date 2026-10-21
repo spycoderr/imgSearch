@@ -5,13 +5,15 @@ Ingest runs in two steps:
    each new hash. The runner works on existing rows, so this step must come first.
 2. `IngestStage`, run through `run_stage`, opens each registered original read-only and
    fills in size, EXIF date and GPS, pHash, the derivative (at most 2048x1536 pixels in
-   area) and the 256px thumbnail.
+   area) and the 256px thumbnail. An original evicted to S3 (P1.6) is first restored with
+   `fetch`; the next `imgsearch evict` applies the cache cap again (review R3).
 """
 
 import hashlib
 import math
 import numbers
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,7 +23,8 @@ import pillow_heif
 from PIL import ExifTags, Image, ImageOps
 
 from imgsearch.config import Config
-from imgsearch.interfaces import Context, ImageRecord, ImageSource
+from imgsearch.interfaces import Context, ImageRecord, ImageSource, ObjectStore
+from imgsearch.store.cache import fetch, open_cloud
 
 # Derivatives are capped by pixel area, not long edge, so panoramas and long screenshots
 # keep readable text (plan D8, changed in M1.1).
@@ -81,18 +84,29 @@ class IngestStage:
     name = "ingest"
     requires: list[str] = []
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        open_store: Callable[[Config], tuple[bytes, ObjectStore]] = open_cloud,
+    ) -> None:
         self.version = config.stages[self.name]
+        self._open_store = open_store  # key and store, opened only for an evicted original
+        self._cloud: tuple[bytes, ObjectStore] | None = None
 
     def load(self, ctx: Context) -> None:
         pillow_heif.register_heif_opener()
 
     def unload(self) -> None:
-        pass  # no model to free
+        self._cloud = None  # no model to free
 
     def run(self, image: ImageRecord, ctx: Context) -> None:
         config = ctx.config
         original = config.originals_root / image.orig_relpath
+        if _is_evicted(ctx.conn, image.id):
+            if self._cloud is None:
+                self._cloud = self._open_store(config)
+            key, store = self._cloud
+            original = fetch(config, ctx.conn, store, key, image.id).path
         with original.open("rb") as f, Image.open(f) as src:
             exif = src.getexif()
             # A profile for another colour space (e.g. CMYK) would be wrong on RGB output.
@@ -126,6 +140,13 @@ class IngestStage:
                     image.id,
                 ),
             )
+
+
+def _is_evicted(conn: sqlite3.Connection, image_id: str) -> bool:
+    row = conn.execute(
+        "SELECT evicted_at IS NOT NULL FROM original_cache WHERE image_id = ?", (image_id,)
+    ).fetchone()
+    return bool(row and row[0])
 
 
 def _to_rgb(img: Image.Image) -> Image.Image:

@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from imgsearch.commands.cloud import cloud_status_lines, run_upload, upload_lines
+from imgsearch.commands.cloud import cloud_status_lines, run_upload, run_upload_db, upload_lines
 from imgsearch.commands.common import need_drive, stage_failures, stage_line
 from imgsearch.config import Config
 from imgsearch.interfaces import Context
@@ -129,7 +129,8 @@ def import_command(ctx: typer.Context) -> None:
 
 
 def update_command(ctx: typer.Context) -> None:
-    """Import the inboxes, upload new originals to S3, then run ingest, embed and ocr.
+    """Import the inboxes, upload new originals to S3, run ingest, embed and ocr, then
+    upload the DB copy.
 
     Indexing still runs if the upload can't (offline). Captions are not run.
     """
@@ -137,7 +138,13 @@ def update_command(ctx: typer.Context) -> None:
     need_drive(config, "originals_root", "derivatives_root")
     stages = [cls(config) for cls in UPDATE_STAGES]
     with closing(connect(config)) as conn:
-        result = update(config, conn, stages, lambda: run_upload(config, conn))
+        result = update(
+            config,
+            conn,
+            stages,
+            lambda: run_upload(config, conn),
+            lambda uploaded: run_upload_db(config, conn, uploaded),
+        )
         failures = {stage.name: stage_failures(conn, stage.name) for stage in stages}
 
     for line in import_lines(result.imported):
@@ -153,7 +160,8 @@ def update_command(ctx: typer.Context) -> None:
         for relpath, error in failures[name]:
             typer.echo(f"  failed: {relpath}: {error}", err=True)
     # Offline is not an error here: the originals are uploaded on a later run.
-    if result.imported.failed or result.uploaded.failed or any(failures.values()):
+    failed = result.imported.failed or result.uploaded.failed or result.uploaded.db_error
+    if failed or any(failures.values()):
         raise typer.Exit(1)
 
 

@@ -17,11 +17,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from imgsearch.config import Config
-from imgsearch.interfaces import ObjectStore
+from imgsearch.interfaces import ObjectStore, StoreUnavailable
+from imgsearch.store.keychain import read_key
 from imgsearch.store.upload import download_original, now
 
 GB = 1e9
 _IMAGE_ID = re.compile(r"[0-9a-f]{64}")
+S3_NOT_CONFIGURED = "S3 not configured: set IMGSEARCH_S3_BUCKET and AWS_PROFILE (see .env.example)"
 
 
 @dataclass
@@ -31,6 +33,20 @@ class EvictResult:
     after: int = 0  # ... and after (what it would be, for a dry run)
     removed: list[tuple[str, int]] = field(default_factory=list)  # (orig_relpath, bytes)
     not_safe: int = 0  # originals over the cap but kept: no verified S3 copy or not ingested
+    error: str | None = None  # why it stopped early (S3 unreachable); None if it didn't
+
+
+def open_cloud(config: Config) -> tuple[bytes, ObjectStore]:
+    """The encryption key and the S3 store.
+
+    Raises StoreUnavailable when S3 isn't configured or reachable, and KeyMissing or
+    KeychainError when the key can't be read.
+    """
+    if config.s3.bucket is None or config.s3.profile is None:
+        raise StoreUnavailable(S3_NOT_CONFIGURED)
+    from imgsearch.store.s3 import S3ObjectStore  # boto3 is slow to import; only load it here
+
+    return read_key(config.s3), S3ObjectStore(config.s3)
 
 
 @dataclass
@@ -71,7 +87,8 @@ def evict(
 ) -> EvictResult:
     """Remove least recently used originals until the rest fit under `cap_gb`.
 
-    A dry run lists what would go and needs no store (pass None).
+    A dry run lists what would go and needs no store (pass None). If the store becomes
+    unreachable, it stops there with `error` set; what was removed so far is listed.
     """
     cached = cached_originals(config, conn)
     result = EvictResult(cap=int(cap_gb * GB))
@@ -85,7 +102,11 @@ def evict(
         if not dry_run:
             if store is None:
                 raise ValueError("a real eviction needs the store, to re-check each S3 copy")
-            _remove(config, conn, store, row["id"], row["orig_relpath"])
+            try:
+                _remove(config, conn, store, row["id"], row["orig_relpath"])
+            except StoreUnavailable as e:
+                result.error = str(e)
+                break
         result.after -= size
         result.removed.append((row["orig_relpath"], size))
     return result

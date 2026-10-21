@@ -9,11 +9,17 @@ import typer
 from imgsearch.commands.common import need_drive
 from imgsearch.config import Config
 from imgsearch.interfaces import ObjectStore, StoreUnavailable
-from imgsearch.store.cache import GB, cached_originals, cloud_counts, evict, fetch
+from imgsearch.store.cache import GB, cached_originals, cloud_counts, evict, fetch, open_cloud
 from imgsearch.store.db import connect
 from imgsearch.store.keychain import KeychainError, KeyMissing, create_key, read_key
 from imgsearch.store.roots import is_available
-from imgsearch.store.upload import UploadResult, not_in_s3, restore_check, upload
+from imgsearch.store.upload import (
+    UploadResult,
+    not_in_s3,
+    restore_check,
+    upload_db_copy,
+    upload_originals,
+)
 
 MB = 1e6
 PROGRESS_EVERY = 50
@@ -21,25 +27,20 @@ PROGRESS_EVERY = 50
 key_app = typer.Typer(no_args_is_help=True, help="Create or export the encryption key.")
 
 
-def open_store(config: Config) -> ObjectStore:
-    from imgsearch.store.s3 import S3ObjectStore  # boto3 is slow to import; only load it here
-
-    return S3ObjectStore(config.s3)
-
-
 def open_key_and_store(config: Config) -> tuple[bytes, ObjectStore]:
     """The key and the store, or exit 1 with the reason."""
     try:
-        return read_key(config.s3), open_store(config)
+        return open_cloud(config)
     except (KeyMissing, KeychainError, StoreUnavailable) as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from None
 
 
 def run_upload(config: Config, conn: sqlite3.Connection) -> UploadResult:
-    """The upload step; a missing key or an unreachable S3 comes back as `error`."""
+    """Upload the originals. A missing key, or S3 not configured or reachable, comes back
+    as `error`; the DB copy is a separate step (`run_upload_db`)."""
     try:
-        key, store = read_key(config.s3), open_store(config)
+        key, store = open_cloud(config)
     except (KeyMissing, KeychainError, StoreUnavailable) as e:
         return UploadResult(error=str(e))
     todo = len(not_in_s3(conn))
@@ -48,13 +49,25 @@ def run_upload(config: Config, conn: sqlite3.Connection) -> UploadResult:
         if done % PROGRESS_EVERY == 0:
             typer.echo(f"  {done} of {todo} originals uploaded", err=True)
 
-    return upload(config, conn, store, key, progress)
+    return upload_originals(config, conn, store, key, progress)
+
+
+def run_upload_db(config: Config, conn: sqlite3.Connection, result: UploadResult) -> None:
+    """Upload the DB copy into `result`, unless the originals' upload couldn't reach S3."""
+    if result.error is not None:
+        return
+    try:
+        key, store = open_cloud(config)
+    except (KeyMissing, KeychainError, StoreUnavailable) as e:
+        result.db_error = str(e)
+        return
+    upload_db_copy(config, conn, store, key, result)
 
 
 def upload_lines(result: UploadResult, pending: int) -> list[str]:
     left = f"{pending} originals not yet in S3"
     if result.error and not result.uploaded and not result.failed:
-        return [f"upload: not run: {result.error}; {left}"]
+        return [f"upload skipped: {result.error}; {left}"]
     lines = [
         f"upload: {len(result.uploaded)} uploaded ({result.uploaded_bytes / MB:.1f} MB),"
         f" {len(result.failed)} failed; {left}"
@@ -63,6 +76,8 @@ def upload_lines(result: UploadResult, pending: int) -> list[str]:
         lines.append(f"upload: stopped early: {result.error}")
     if result.db is not None:
         lines.append(f"db copy: {result.db}")
+    if result.db_error is not None:
+        lines.append(f"db copy: FAILED: {result.db_error}")
     return lines
 
 
@@ -72,12 +87,13 @@ def upload_command(ctx: typer.Context) -> None:
     need_drive(config, "originals_root")
     with closing(connect(config)) as conn:
         result = run_upload(config, conn)
+        run_upload_db(config, conn, result)
         pending = len(not_in_s3(conn))
     for line in upload_lines(result, pending):
         typer.echo(line)
     for relpath, error in result.failed:
         typer.echo(f"  failed: {relpath}: {error}", err=True)
-    if result.error or result.failed:
+    if result.error or result.failed or result.db_error:
         raise typer.Exit(1)
 
 
@@ -106,6 +122,9 @@ def evict_command(
     )
     for relpath, size in result.removed:
         typer.echo(f"  {verb}: {relpath} ({size / MB:.1f} MB)")
+    if result.error is not None:
+        typer.echo(f"evict: stopped early: {result.error}", err=True)
+        raise typer.Exit(1)
     if result.after > result.cap:
         typer.echo(
             f"still over the cap: {result.not_safe} originals are not safe to evict yet"
@@ -124,7 +143,7 @@ def fetch_command(
     with closing(connect(config)) as conn:
         try:
             result = fetch(config, conn, store, key, image)
-        except LookupError as e:
+        except (LookupError, StoreUnavailable) as e:
             typer.echo(str(e), err=True)
             raise typer.Exit(1) from None
     typer.echo(str(result.path))
@@ -148,7 +167,10 @@ def restore_check_command(
         typer.echo(f"  ok: {relpath}")
     for relpath, error in result.failed:
         typer.echo(f"  FAILED: {relpath}: {error}", err=True)
-    typer.echo(f"originals: {len(result.checked)} of {sample} match their image id")
+    typer.echo(f"originals: {len(result.checked)} of {result.sampled} match their image id")
+    if result.error is not None:
+        typer.echo(f"restore-check: stopped early: {result.error}", err=True)
+        raise typer.Exit(1)
     typer.echo(f"db copy: {result.db}")
     if result.failed:
         raise typer.Exit(1)

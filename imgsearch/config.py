@@ -81,8 +81,10 @@ class EvalPaths(_Strict):
 
 
 class S3Config(_Strict):
-    bucket: str  # from IMGSEARCH_S3_BUCKET in .env
-    profile: str  # AWS profile in ~/.aws/, from AWS_PROFILE in .env
+    # From IMGSEARCH_S3_BUCKET and AWS_PROFILE (a profile in ~/.aws/) in .env. None when the
+    # variable is unset: only the commands that use S3 need them (review R5).
+    bucket: str | None
+    profile: str | None
     region: str
     storage_class: str  # e.g. GLACIER_IR
     originals_prefix: str  # object key = prefix + image id
@@ -121,9 +123,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_F
     """Read a config file.
 
     In path fields and in `s3.bucket` and `s3.profile`, `${VAR}` is replaced from the
-    environment, else from `env_file` (a missing file is fine), and an unset variable is an
-    error. Then `~` is expanded in paths, and relative paths resolve against the config
-    file's folder.
+    environment, else from `env_file` (a missing file is fine). An unset variable is an
+    error in a path, and makes `s3.bucket` or `s3.profile` None. Then `~` is expanded in
+    paths, and relative paths resolve against the config file's folder.
     """
     path = path.resolve()
     env = {**dotenv_values(env_file), **os.environ}  # real environment variables win
@@ -142,8 +144,15 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_F
             data["eval"][key] = resolve(data["eval"][key])
     for key in ("bucket", "profile"):  # account-specific names live in .env, not the repo
         if key in data.get("s3", {}):
-            data["s3"][key] = expand_vars(data["s3"][key], env)
+            try:
+                data["s3"][key] = expand_vars(data["s3"][key], env)
+            except UnsetVariable:
+                data["s3"][key] = None
     return Config.model_validate(data)
+
+
+class UnsetVariable(ValueError):
+    pass
 
 
 def expand_vars(value: str, env: Mapping[str, str | None]) -> str:
@@ -152,7 +161,7 @@ def expand_vars(value: str, env: Mapping[str, str | None]) -> str:
     def lookup(match: re.Match[str]) -> str:
         name = match.group(1)
         if not env.get(name):
-            raise ValueError(
+            raise UnsetVariable(
                 f"{name} is not set: put it in .env (see .env.example) or the environment"
             )
         return env[name]

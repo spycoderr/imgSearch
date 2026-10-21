@@ -493,7 +493,11 @@ and `s3:GetObjectVersion`; the last is needed because upload, `fetch` and `resto
 an exact version, and without it those requests return 403): it can't delete objects or change
 versioning, so the code never deletes from S3, and re-uploading a key adds a new version. The
 key is in `~/.aws/` under the profile named by `AWS_PROFILE`; the bucket name is
-`IMGSEARCH_S3_BUCKET`. Both are in `.env`, so no committed file names them.
+`IMGSEARCH_S3_BUCKET`. Both are in `.env`, so no committed file names them. Only the commands
+that use S3 (`upload`, `evict`, `fetch`, `restore-check`, and the upload steps of `update`)
+need them; without them those commands say `S3 not configured` and exit 1, `update` prints
+`upload skipped: S3 not configured` and still indexes, and everything else (`status`,
+`verify`, `search`, `evict --dry-run`, ...) works as usual.
 
 **The encryption key.** AES-256-GCM, one random 256-bit key, kept in the macOS Keychain
 (item `imgsearch-s3`, from `s3.keychain_service`), read through the built-in `security` command.
@@ -533,19 +537,30 @@ uv run imgsearch status               # adds "s3:" and "cache:" lines
   copy made with SQLite's online backup API, encrypted the same way, but only when the DB has
   changed since the last copy (bucket versioning keeps the older copies for 90 days). Without
   the DB, the objects can't be mapped back to file paths. Offline, it prints
-  `upload: not run: S3 unreachable: ...`, changes nothing and exits 1.
-- **`update`** uploads right after the import. If the upload can't run (offline, or no key),
-  indexing still runs, the summary says how many originals are not yet in S3, and the next
-  run uploads them.
+  `upload skipped: S3 unreachable: ...`, changes nothing and exits 1. A failed DB copy is
+  printed as `db copy: FAILED: ...` and exits 1.
+- **`update`** uploads new originals right after the import, and the DB copy at the end, so
+  the copy includes the run's index. If the upload can't run or fails (offline, no key, S3 not
+  configured, an S3 error), indexing still runs, the summary says how many originals are not
+  yet in S3, and the next run uploads them. A failed DB copy makes `update` exit 1.
+- **`import`** treats a photo already registered as a duplicate even when its original was
+  evicted, as long as it has a verified S3 copy: the inbox file is removed and nothing is
+  restored.
+- **Re-ingesting** (an ingest version bump) fetches each evicted original back first, through
+  `fetch`; the next `evict` applies the cap again.
 - **`evict`** removes originals from the pen drive, least recently used first (last `fetch`,
   else the time it was registered), until the rest are under the cap. It removes one only if
   it has a verified S3 copy (re-checked with S3 just before) and its ingest is done. It never
   touches the `images` row: search, thumbnails and derivatives are unaffected. Sizes are file
-  sizes; exFAT adds about 8% on disk.
+  sizes; exFAT adds about 8% on disk. If S3 becomes unreachable mid-run, it lists what it
+  removed, prints `evict: stopped early: ...` and exits 1.
 - **`fetch`** returns the local path. If the original was evicted, it downloads the recorded
   version, checks the encrypted hash, decrypts, checks that the SHA-256 equals the image id,
   and writes it back to the same path (temp file, fsync, rename; never over an existing file),
-  with its original mtime. A mismatch fails loudly and writes nothing.
+  with its original mtime. A mismatch fails loudly and writes nothing. Offline, it prints
+  `S3 unreachable: ...` and exits 1.
 - **`verify`** skips the hash check for evicted originals (it still checks their derivative
-  and thumbnail) and says how many it skipped; `restore-check` covers the S3 side.
+  and thumbnail) and says how many it skipped; `restore-check` covers the S3 side. It reports
+  a missing or undecryptable DB copy as a failure (after the originals' results); offline, it
+  prints what it checked, then `restore-check: stopped early: ...`, and exits 1.
 

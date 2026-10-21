@@ -1,9 +1,10 @@
 """`imgsearch update`: import, upload, then ingest, embed and ocr (plan P1.5, P1.6).
 
 Captions are not part of it: they run separately, in the background (decided after M7).
-New originals are uploaded to S3 right after the import, before indexing. If the upload
-can't run (offline, no key), indexing still runs and the result says how many originals
-are not yet in S3.
+New originals are uploaded to S3 right after the import, before indexing; the encrypted DB
+copy is uploaded last, so it includes this run's index (review R7). If the upload can't run
+or fails (offline, no key, S3 not configured), indexing still runs and the result says how
+many originals are not yet in S3.
 """
 
 import sqlite3
@@ -36,11 +37,15 @@ def update(
     conn: sqlite3.Connection,
     stages: list[Stage],
     upload: Callable[[], UploadResult],
+    upload_db: Callable[[UploadResult], None],
 ) -> UpdateResult:
-    """Check the pen drive, import, upload, then run `stages` in order through the runner.
+    """Check the pen drive, import, upload the originals, run `stages` in order through the
+    runner, then upload the DB copy.
 
-    `upload` runs the upload step (the CLI passes one that opens S3 and the Keychain; tests
-    pass fakes). Raises DriveNotMounted before doing anything if the pen drive is missing.
+    `upload` uploads the originals and `upload_db` records the DB copy's outcome in the
+    result (the CLI passes steps that open S3 and the Keychain; tests pass fakes). Neither
+    raises on a store error. Raises DriveNotMounted before doing anything if the pen drive
+    is missing.
     """
     require_mounted(config, "originals_root", "derivatives_root")
     imported = import_inbox(config, conn)
@@ -48,4 +53,5 @@ def update(
     pending = len(not_in_s3(conn))
     ctx = Context(config=config, conn=conn)
     stage_counts = {stage.name: run_stage(stage, ctx) for stage in stages}
+    upload_db(uploaded)
     return UpdateResult(imported, uploaded, pending, stage_counts)

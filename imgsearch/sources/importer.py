@@ -6,7 +6,7 @@ hidden files and Syncthing's `.syncthing.*.tmp` files are skipped):
 
 1. Skip it if it changed in the last MIN_AGE_S seconds: it may still be arriving.
 2. Hash it. A hash already in `images` is a duplicate, and the inbox file is removed (only
-   if the registered original is in place).
+   if the registered original is in place, or was evicted with a verified S3 copy).
 3. Copy it to originals_root/YYYY/MM/<name>, dated by EXIF, else by the file's mtime. The
    copy goes to a hidden temp name in the target folder, is fsynced, re-hashed and only
    then renamed to its final name.
@@ -91,10 +91,13 @@ def _import_one(
     image_id = sha256_file(path)
     row = conn.execute("SELECT orig_relpath FROM images WHERE id = ?", (image_id,)).fetchone()
     if row is not None:
-        if not (config.originals_root / row["orig_relpath"]).is_file():
+        in_s3 = conn.execute(
+            "SELECT 1 FROM s3_copies WHERE image_id = ? AND verified_at IS NOT NULL", (image_id,)
+        ).fetchone()
+        if not in_s3 and not (config.originals_root / row["orig_relpath"]).is_file():
             raise FileNotFoundError(
-                f"same photo as {row['orig_relpath']}, which is missing from originals_root;"
-                " kept in the inbox"
+                f"same photo as {row['orig_relpath']}, which is missing from originals_root"
+                " and has no verified S3 copy; kept in the inbox"
             )
         path.unlink()
         return None
