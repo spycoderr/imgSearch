@@ -1,8 +1,11 @@
-"""The bot's background side (P3): the worker thread and the idle-unloading searcher (D21)."""
+"""The bot's background side (P3): the worker and the idle-unloading searcher (D21).
+
+The worker is driven with `step()` and `idle_s=0` (an empty queue counts as idle at once),
+so nothing here waits on the clock.
+"""
 
 import logging
 import sqlite3
-import threading
 
 import pytest
 
@@ -27,14 +30,23 @@ def test_lazy_searcher_loads_once_and_unloads(config, chat_library, make_searche
     assert lazy.get() is not first and lazy.loads == 2
 
 
-def test_worker_calls_on_idle_after_the_timeout():
-    handled, idle = [], threading.Event()
-    worker = Worker(lambda m: handled.append(m.message_id), idle.set, idle_s=0.01)
-    worker.start()
+def test_worker_handles_messages_in_order_then_goes_idle():
+    handled, idle = [], []
+    worker = Worker(lambda m: handled.append(m.message_id), lambda: idle.append(1), idle_s=0)
     worker.submit(message("1"))
-    assert idle.wait(timeout=5)
-    worker.stop()
-    assert handled == ["1"]
+    worker.submit(message("2"))
+    assert worker.step() and worker.step()
+    assert handled == ["1", "2"] and idle == []
+    assert worker.step()  # nothing came within idle_s: on_idle (D21 unloads the models)
+    assert idle == [1]
+
+
+def test_worker_unloads_and_stops_when_asked():
+    idle = []
+    worker = Worker(lambda m: None, lambda: idle.append(1), idle_s=0)
+    worker.queue.put(None)  # what stop() queues
+    assert worker.step() is False
+    assert idle == [1]
 
 
 def test_worker_survives_a_failing_message(caplog):
@@ -46,12 +58,23 @@ def test_worker_survives_a_failing_message(caplog):
             raise RuntimeError(private)
         handled.append(m.message_id)
 
-    worker = Worker(handle, lambda: None, idle_s=60)
+    worker = Worker(handle, lambda: None, idle_s=0)
+    worker.submit(message("bad"))
+    worker.submit(message("good"))
     with caplog.at_level(logging.INFO):
-        worker.start()
-        worker.submit(message("bad"))
-        worker.submit(message("good"))
-        worker.stop()  # finishes the queue first
+        assert worker.step() and worker.step()
     assert handled == ["good"]
-    assert "RuntimeError" in caplog.text and "private text" not in caplog.text
+    assert "RuntimeError" in caplog.text and private not in caplog.text
     assert "log-good handled" in caplog.text
+
+
+def test_worker_thread_finishes_the_queue_on_stop():
+    """The real thread: stop() queues the end marker after the messages and joins."""
+    handled = []
+    worker = Worker(lambda m: handled.append(m.message_id), lambda: None, idle_s=60)
+    worker.start()
+    for n in range(5):
+        worker.submit(message(str(n)))
+    worker.stop()
+    assert handled == ["0", "1", "2", "3", "4"]
+    assert not worker.thread.is_alive()

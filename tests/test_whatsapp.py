@@ -265,16 +265,17 @@ def documents(graph: FakeGraph) -> list[tuple[bytes, dict]]:
 
 
 class Service:
-    """build_whatsapp_app with fakes. The searcher waits for `gate`, so a test can see the
-    webhook answer before the search runs."""
+    """build_whatsapp_app with fakes. Building the searcher waits while `gate` is closed
+    (it starts open), so a test can see the webhook answer before the search runs."""
 
     def __init__(self, config: Config, graph: FakeGraph, make_searcher) -> None:
         self.gate = threading.Event()
+        self.gate.set()
         self.graph = graph
         self.searchers: list[Searcher] = []
 
         def build() -> Searcher:
-            self.gate.wait(timeout=5)
+            self.gate.wait()
             self.searchers.append(make_searcher(connect(config)))  # in the worker thread
             return self.searchers[-1]
 
@@ -296,18 +297,20 @@ def service(config, chat_library, make_searcher, graph) -> Service:
 
 
 def test_webhook_answers_at_once_and_searches_in_the_background(service, graph):
+    service.gate.clear()
     with TestClient(service.app) as client:
-        response = service.post(client, payload(text_message(QUERY)))
-        assert response.status_code == 200
-        assert graph.messages == []  # the search is still waiting
-        service.gate.set()
+        try:
+            response = service.post(client, payload(text_message(QUERY)))
+            assert response.status_code == 200
+            assert graph.messages == []  # the search is still waiting for the gate
+        finally:
+            service.gate.set()  # always, so leaving the client can't hang
     # Leaving the client stops the worker after it has handled the queue.
     assert service.queries() == [QUERY]
     assert len(graph.images()) == 5
 
 
 def test_repeated_delivery_is_handled_once(service, graph):
-    service.gate.set()
     with TestClient(service.app) as client:
         body = payload(text_message(QUERY, message_id="wamid.same"))
         assert service.post(client, body).status_code == 200
@@ -317,7 +320,6 @@ def test_repeated_delivery_is_handled_once(service, graph):
 
 
 def test_sender_not_allowed_gets_no_reply(service, graph, caplog):
-    service.gate.set()
     with caplog.at_level(logging.INFO), TestClient(service.app) as client:
         response = service.post(client, payload(text_message(QUERY, sender=STRANGER)))
         assert response.status_code == 200
@@ -329,7 +331,6 @@ def test_sender_not_allowed_gets_no_reply(service, graph, caplog):
 
 @pytest.mark.parametrize("signature", ["sha256=" + "0" * 64, "nonsense"])
 def test_bad_signature_is_refused_and_not_processed(service, graph, signature):
-    service.gate.set()
     with TestClient(service.app) as client:
         response = service.post(client, payload(text_message(QUERY)), signature)
         assert response.status_code == 401
@@ -340,7 +341,6 @@ def test_bad_signature_is_refused_and_not_processed(service, graph, signature):
 
 
 def test_non_text_message_gets_a_short_reply(service, graph):
-    service.gate.set()
     photo = {"from": SENDER, "id": "wamid.p", "timestamp": "1", "type": "image", "image": {}}
     with TestClient(service.app) as client:
         service.post(client, payload(photo))
@@ -377,7 +377,6 @@ def test_server_binds_localhost_only():
 
 
 def test_logs_hold_no_message_text_or_numbers(service, graph, caplog):
-    service.gate.set()
     with caplog.at_level(logging.DEBUG), TestClient(service.app) as client:
         service.post(client, payload(text_message(QUERY, message_id="wamid.log")))
         service.post(client, payload(text_message("original 1", message_id="wamid.log2")))
@@ -389,7 +388,6 @@ def test_logs_hold_no_message_text_or_numbers(service, graph, caplog):
 
 
 def test_status_callbacks_are_logged_without_the_recipient(service, graph, caplog):
-    service.gate.set()
     with caplog.at_level(logging.INFO), TestClient(service.app) as client:
         response = service.post(client, status_payload(SENT, FAILED))
         assert response.status_code == 200

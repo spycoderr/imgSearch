@@ -263,10 +263,8 @@ def test_classify():
 # ---- the bot, end to end ----
 
 
-def make_build(config: Config, make_searcher, gate: threading.Event | None = None):
+def make_build(config: Config, make_searcher):
     def build() -> Searcher:
-        if gate is not None:
-            gate.wait(timeout=5)
         return make_searcher(connect(config))  # in the worker thread
 
     return build

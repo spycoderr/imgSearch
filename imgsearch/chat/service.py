@@ -100,27 +100,30 @@ class Worker:
         self.thread.join()
 
     def _run(self) -> None:
-        while True:
-            try:
-                message = self.queue.get(timeout=self.idle_s)
-            except queue.Empty:
+        while self.step():
+            pass
+
+    def step(self) -> bool:
+        """Handle the next queued message, or call `on_idle` if none comes within `idle_s`.
+        Returns False once `stop` was asked for. The thread calls this in a loop; tests can
+        call it directly."""
+        try:
+            message = self.queue.get(timeout=self.idle_s)
+        except queue.Empty:
+            self.on_idle()
+            return True
+        try:
+            if message is None:
                 self.on_idle()
-                continue
-            try:
-                if message is None:
-                    self.on_idle()
-                    return
-                start = time.perf_counter()
-                self.handle(message)
-                log.info(
-                    "message %s handled in %.2fs",
-                    message.log_id,
-                    time.perf_counter() - start,
-                )
-            except Exception as e:  # one failed message must not stop the bot
-                log.error("message failed: %s\n%s", type(e).__name__, traceback_lines(e))
-            finally:
-                self.queue.task_done()
+                return False
+            start = time.perf_counter()
+            self.handle(message)
+            log.info("message %s handled in %.2fs", message.log_id, time.perf_counter() - start)
+        except Exception as e:  # one failed message must not stop the bot
+            log.error("message failed: %s\n%s", type(e).__name__, traceback_lines(e))
+        finally:
+            self.queue.task_done()
+        return True
 
 
 def traceback_lines(e: BaseException) -> str:

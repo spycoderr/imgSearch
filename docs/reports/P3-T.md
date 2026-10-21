@@ -166,3 +166,28 @@ All are recorded in the plan; P3-T entries are in "Changes during build".
   - `imgsearch/cli.py`, `config.yaml`, `.env.example`
   - `tests/conftest.py` (shared chat fixtures), `tests/test_whatsapp.py`
   - `README.md`, `Personal Image Search Design and MVP Plan.md`
+
+## Follow-ups
+
+### 2026-10-21: thread tests made deterministic (before the phase B merge)
+
+The supervisor saw the suite fail once in 13 runs on `p3` (it passed on re-runs), most
+likely the thread tests that waited with `timeout=5` under CPU load.
+
+- **`Worker.step()`** (`imgsearch/chat/service.py`) handles the next message, or calls
+  `on_idle` if none comes within `idle_s`, and returns False after `stop`. The thread runs
+  it in a loop. The worker tests call it directly with `idle_s=0`: an empty queue raises
+  `queue.Empty` at once, without sleeping. One test keeps a real thread but depends only on
+  `stop()` draining the queue and joining. (`test_chat_service.py`: 5 tests, was 3.)
+- **WhatsApp webhook test** (`test_whatsapp.py`): the searcher's gate starts open and is
+  waited on with no timeout. The one test that closes it, to see the 200 before the search
+  runs, reopens it in a `finally`, so it can neither time out early nor hang. Six
+  `gate.set()` lines that were no longer needed are gone.
+- **`test_telegram.py`:** removed an unused `gate` parameter (the dead `timeout=5`).
+- No bot test now waits on the clock. Other clock uses in the suite are outside the bot,
+  with wide margins (the import tests' 60 s settle window; one rewriter test that compares
+  against today's date).
+- **Results:** 453 tests.
+  - 10 consecutive full-suite runs: 10/10 passed (load average about 2).
+  - 20 runs of the four chat test files with 10 CPU spinners on the 10 cores: 20/20
+    passed (load average up to 12).
