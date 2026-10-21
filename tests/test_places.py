@@ -432,8 +432,9 @@ class FakeRewriter:
 ALL = {"gate", "fort", "city", "noida", "caption", "plain"}
 
 
-def searcher(conn, config: Config, place, date_range=None) -> Searcher:
-    """A vector retriever that ranks every photo, and the text retriever."""
+def searcher(conn, config: Config, place, date_range=None, place_filter=True) -> Searcher:
+    """A vector retriever that ranks every photo, and the text retriever. The place filter
+    is on unless `place_filter` is False (the project config has it off, see below)."""
     for image_id in ALL:
         save_embedding(conn, image_id, "test-model", np.array([1.0, 0.0], dtype=np.float32), 2)
     embedder_config = config.models.embedder.model_copy(update={"name": "test-model", "dim": 2})
@@ -441,7 +442,8 @@ def searcher(conn, config: Config, place, date_range=None) -> Searcher:
         "vector": VectorRetriever(conn, FakeEmbedder(), embedder_config),
         "text": TextRetriever(conn),
     }
-    return Searcher(conn, config.search, FakeRewriter(place, date_range), retrievers)
+    search_config = config.search.model_copy(update={"place_filter": place_filter})
+    return Searcher(conn, search_config, FakeRewriter(place, date_range), retrievers)
 
 
 def found(response) -> set[str]:
@@ -505,6 +507,15 @@ def test_place_filter_off(library, geo: Config):
     assert response.query.place_filter.label == "Jaipur" and response.place_filter is None
 
 
+def test_the_default_comes_from_config_and_is_off(library, geo: Config):
+    """P1.8 rule (acceptance item 14): the filter lowered place queries, so it is off."""
+    assert geo.search.place_filter is False
+    s = searcher(library, geo, "Jaipur", place_filter=False)
+    assert found(s.search("q", k=10, signals=["vector"])) == ALL
+    on = s.search("q", k=10, signals=["vector"], place_filter=True)
+    assert found(on) == {"fort", "city", "caption"}
+
+
 # ---- showing places ----
 
 
@@ -530,9 +541,10 @@ def test_cli_lines_show_the_place_and_each_results_place(library, geo: Config):
     assert "place: Jaipur found but not used (place filter off)" in lines
 
 
-def test_cli_search_accepts_no_place_filter(config_path: Path, library):
+@pytest.mark.parametrize("flag", ["--place-filter", "--no-place-filter"])
+def test_cli_search_accepts_the_place_filter_switches(config_path: Path, library, flag: str):
     args = ["--config", str(config_path), "search", "fort", "--signals", "text", "--no-rewrite"]
-    result = CliRunner().invoke(app, [*args, "--no-place-filter"])
+    result = CliRunner().invoke(app, [*args, flag])
     assert result.exit_code == 0, result.output
     assert "fort.jpg" in result.output and "Amber Fort, Amer, Jaipur, Rajasthan" in result.output
 
@@ -551,7 +563,7 @@ def eval_searcher(conn, config: Config):
     s = searcher(conn, config, "Jaipur")
     rewriter = CachedRewriter(s.rewriter)
     retrievers = {**s.retrievers, "text_no_captions": TextRetriever(conn, kinds=("ocr",))}
-    return Searcher(conn, config.search, rewriter, retrievers), rewriter
+    return Searcher(conn, s.config, rewriter, retrievers), rewriter  # filter on
 
 
 def test_eval_records_the_place_and_can_switch_the_filter_off(library, geo: Config):
@@ -582,8 +594,9 @@ def test_eval_meta_and_cli_switch(library, geo: Config, config_path: Path):
         library,
         lambda _: None,
         build=lambda c, conn: eval_searcher(conn, c),
-        place_filter=False,
     )
+    # No switch given: meta records the config default (off), not None.
     assert json.loads((run_dir / "meta.json").read_text())["place_filter"] is False
     result = CliRunner().invoke(app, ["--config", str(config_path), "eval", "--help"])
-    assert result.exit_code == 0 and "--no-place-filter" in result.output
+    assert result.exit_code == 0 and "--place-filter" in result.output
+    assert "--no-place-filter" in result.output

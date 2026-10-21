@@ -48,10 +48,13 @@ def search(
         bool,
         typer.Option("--no-date-filter", help="Ignore a date found in the query."),
     ] = False,
-    no_place_filter: Annotated[
-        bool,
-        typer.Option("--no-place-filter", help="Ignore a place found in the query."),
-    ] = False,
+    place_filter: Annotated[
+        bool | None,
+        typer.Option(
+            "--place-filter/--no-place-filter",
+            help="Limit results to a place found in the query (default: search.place_filter).",
+        ),
+    ] = None,
 ) -> None:
     """Search: rewrite QUERY to English, run the chosen retrievers, fuse them with RRF.
 
@@ -75,7 +78,7 @@ def search(
             k=k,
             rewrite=not no_rewrite,
             date_filter=not no_date_filter,
-            place_filter=not no_place_filter,
+            place_filter=place_filter,
         )
     for line in response_lines(response):
         typer.echo(line)

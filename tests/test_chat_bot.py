@@ -198,6 +198,7 @@ def test_place_fallback_says_no_photos_matched_the_place(
             "INSERT INTO photo_places (image_id, state_id) VALUES ('img01', 1271157)"
         )
     searcher = make_searcher(chat_library)
+    searcher.config = config.search.model_copy(update={"place_filter": True})  # off in config
     searcher.rewriter.rewrite = lambda q: ParsedQuery("dogs in goa", q, place="Goa")
     anywhere = searcher.retrievers["vector"].retrieve
     searcher.retrievers["vector"].retrieve = lambda q, k: [] if q.place_filter else anywhere(q, k)

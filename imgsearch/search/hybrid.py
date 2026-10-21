@@ -71,7 +71,7 @@ class Searcher:
         rewrite: bool = True,
         signals: Collection[str] | None = None,
         date_filter: bool = True,
-        place_filter: bool = True,
+        place_filter: bool | None = None,
     ) -> SearchResponse:
         """Top `k` (default `search.top_k`) for `query`. `rewrite` and `signals` are the
         switches for ablations; `signals=None` uses every retriever this searcher has.
@@ -81,7 +81,8 @@ class Searcher:
         keep only photos from there or whose text names it; a place that resolves to nothing
         ("park", "home") is ignored. Both filters must hold. If nothing survives, the place
         is dropped first (`place_fallback`), then the dates (`date_fallback`), and the search
-        runs again. `date_filter=False` and `place_filter=False` ignore them."""
+        runs again. `date_filter=False` ignores the dates; `place_filter` switches the place
+        filter on or off, and None uses `search.place_filter` from config."""
         names = tuple(self.retrievers) if signals is None else tuple(signals)
         unknown = [s for s in names if s not in self.retrievers]
         if not names or unknown:
@@ -99,6 +100,8 @@ class Searcher:
         # (the chat bot's `more`), so a search can return k results.
         depth = max(self.config.per_retriever_k, k)
         date_range = q.date_range if date_filter else None
+        if place_filter is None:
+            place_filter = self.config.place_filter
         place = q.place_filter if place_filter else None
         fused = self._fuse(replace(q, date_range=date_range, place_filter=place), names, depth)
         place_fallback = not fused and place is not None

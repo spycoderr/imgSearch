@@ -72,11 +72,11 @@ def run_eval(
     ablations: tuple[Ablation, ...] = ABLATIONS,
     progress: Callable[[EvalQuery, dict[str, dict]], None] | None = None,
     date_filter: bool = True,
-    place_filter: bool = True,
+    place_filter: bool | None = None,
 ) -> list[dict]:
     """One record per (query, ablation): what was searched, the top 5 and its metrics.
-    `date_filter=False` and `place_filter=False` ignore dates and places found in the
-    queries (to measure the filters)."""
+    `date_filter=False` ignores dates found in the queries (to measure the filter);
+    `place_filter` switches the place filter on or off (None: the searcher's config)."""
     records = []
     for q in queries:
         done: dict[str, dict] = {}

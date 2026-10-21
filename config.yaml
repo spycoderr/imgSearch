@@ -122,6 +122,10 @@ search:
   default_signals: [vector]
   # RRF weight per signal: score = sum of weight / (rrf_k + rank). 1.0 = plain RRF.
   signal_weights: {vector: 1.0, text: 1.0}
+  # Limit results to a place the query names (P1.8)? Off by the P1.8 rule (acceptance item 14):
+  # place queries went 0.74 -> 0.64 recall@5 with it on, because photos without GPS whose text
+  # doesn't name the place drop out (docs/eval/baseline-p1.8.md). `--place-filter` turns it on.
+  place_filter: false
 
 # Places from GPS (P1.8, plan D22): offline reverse geocoding with GeoNames (CC BY 4.0).
 # `imgsearch geo download` fetches the files once into `dir` (git-ignored); nothing is looked

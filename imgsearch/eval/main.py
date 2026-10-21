@@ -35,12 +35,12 @@ def evaluate(
     echo: Callable[[str], None],
     build: Callable[[Config, sqlite3.Connection], tuple[Searcher, CachedRewriter]] = eval_searcher,
     date_filter: bool = True,
-    place_filter: bool = True,
+    place_filter: bool | None = None,
 ) -> Path:
     """Run every ablation on the query set and write `runs_dir/<timestamp>/`. Returns it.
     `build` makes the searcher; tests pass one with fakes (the M3 test-injection convention).
-    `date_filter=False` and `place_filter=False` ignore dates and places found in the
-    queries."""
+    `date_filter=False` ignores dates found in the queries; `place_filter` switches the
+    place filter on or off (None: `search.place_filter`)."""
     queries = load_queries(config.eval.queries, conn)
     echo(counts(queries))
     started = datetime.now()
@@ -61,7 +61,7 @@ def evaluate(
         "queries_sha256": hashlib.sha256(config.eval.queries.read_bytes()).hexdigest(),
         "ablations": [a.name for a in ABLATIONS],
         "date_filter": date_filter,
-        "place_filter": place_filter,
+        "place_filter": config.search.place_filter if place_filter is None else place_filter,
         "signal_weights": config.search.signal_weights,
         "per_retriever_k": config.search.per_retriever_k,
         "embedder": config.models.embedder.name,

@@ -97,6 +97,7 @@ class SearchConfig(_Strict):
     default_signals: list[Literal["vector", "text"]]  # used when a caller names none
     # RRF weight per signal: score = sum of weight / (rrf_k + rank). A missing signal is 1.0.
     signal_weights: dict[Literal["vector", "text"], float]
+    place_filter: bool  # default for limiting results to a place the query names (P1.8)
 
     @field_validator("default_signals")
     @classmethod
