@@ -136,3 +136,19 @@ account-level block stops replies as well, not just messages the business starts
 **Next:** add a payment method in WhatsApp Manager → Payment settings (for the business that
 owns this WhatsApp account), then tell me and I re-test. If it still fails, business
 verification is the last block. The token expires at 17:30 IST.
+
+## Phase B, part 1: re-test after the payment method (2026-10-21, 16:15)
+
+**Still locked.** The payment method cleared the account's block: health status now says
+the WhatsApp Business Account, phone number and app can all send, and only "business not
+verified" (141010) remains (overall LIMITED). But replies inside the open 24 h window at
+16:08 and 16:11 both failed with 131031 "Business Account locked".
+
+**Left to do (both on Meta's side):**
+1. Business verification: Business settings → Security centre → Start verification
+   (documents for the legal name; takes days).
+2. A Meta support ticket asking to unlock, quoting error 131031 and WABA id
+   1650890083124255. A lock can remain from an integrity flag the health check doesn't show.
+
+Nothing in our code needs to change: inbound messages arrive, and every send is accepted
+and gets a callback within ~5 s. When a reply is delivered, part 2 (search) can start.
