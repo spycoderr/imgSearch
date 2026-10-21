@@ -162,6 +162,7 @@ telegram:                 # long polling: no webhook, no open port
   poll_timeout_s: 30      # getUpdates waits this long for a message
   timeout_s: 60           # per request, uploads included
   original_max_mb: 50     # the Bot API's upload limit for documents
+  ipv4_only: true         # IPv6 connects to Telegram stalled 30-115 s here (P3-T phase B)
 
 whatsapp:                 # parked; webhook server on 127.0.0.1, public through a tunnel
   graph_url: https://graph.facebook.com

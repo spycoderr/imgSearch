@@ -37,6 +37,7 @@ MB = 1e6
 HELP = (
     "Send what you're looking for, in English, Hindi or Hinglish, e.g. "
     '"mummy ke saath beach pe". I reply with the best matching photos.\n'
+    'Add a number for more or fewer, e.g. "10 photos of the beach" or "top 3 dogs".\n'
     "more: the next photos for your last search\n"
     "original N: the full original file of photo N\n"
     "help: this message"
@@ -54,6 +55,12 @@ NO_DRIVE = "The pen drive isn't plugged in, so originals are unavailable."
 NOT_FETCHABLE = "That original isn't on the pen drive and couldn't be fetched from S3 right now."
 
 _ORIGINAL = re.compile(r"original\s+(\d+)")
+# "10 photos", "3 pics", "५ तस्वीरें", or "top 10": how many photos the user wants.
+_COUNT = re.compile(
+    r"(?<!\d)(\d{1,2})\s*(?:photos?|images?|pics?|pictures?|snaps?|tasveer\w*|फ़ोटो|फोटो|तस्वीर\w*|चित्र)"
+    r"|\btop\s+(\d{1,2})(?!\d)",
+    re.IGNORECASE,
+)
 
 
 class OriginalUnavailable(Exception):
@@ -82,6 +89,7 @@ class LastSearch:
 
     results: list[Result]  # up to chat.max_results
     shown: int  # how many were sent so far
+    page: int  # how many to send per reply: search.top_k, or the number the user asked for
 
 
 class ChatBot:
@@ -177,8 +185,9 @@ class ChatBot:
             self.last.pop(sender, None)
             self.messenger.send_text(sender, NO_RESULTS)
             return
-        self.last[sender] = LastSearch(results, shown=min(self.page, len(results)))
-        self.send_images(sender, results[: self.page])
+        page = requested_count(text, self.config.chat.max_results) or self.page
+        self.last[sender] = LastSearch(results, shown=min(page, len(results)), page=page)
+        self.send_images(sender, results[:page])
 
     def _more(self, sender: str) -> None:
         last = self.last.get(sender)
@@ -189,7 +198,7 @@ class ChatBot:
             self.messenger.send_text(sender, NO_MORE)
             return
         start = last.shown
-        last.shown = min(start + self.page, len(last.results))
+        last.shown = min(start + last.page, len(last.results))
         self.send_images(sender, last.results[start : last.shown], first_rank=start + 1)
 
     def _original(self, sender: str, n: int) -> None:
@@ -233,6 +242,16 @@ class ChatBot:
             if path.is_file():
                 return path
         return None
+
+
+def requested_count(text: str, most: int) -> int | None:
+    """The number of photos the message asks for ("10 photos", "top 3"), at most `most`;
+    None if it names no count."""
+    match = _COUNT.search(text)
+    if match is None:
+        return None
+    n = int(match.group(1) or match.group(2))  # int() reads any script's digits
+    return max(1, min(n, most)) if n else None
 
 
 def caption_line(rank: int, date: str | None, r: Result) -> str:

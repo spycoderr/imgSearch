@@ -92,7 +92,11 @@ class TelegramClient:
         self.token = token
         self.base = f"{config.api_url}/bot{token}"
         self.timeout = config.timeout_s
-        self.client = client or httpx.Client()
+        if client is None:
+            # Binding to 0.0.0.0 makes every connection IPv4.
+            local = "0.0.0.0" if config.ipv4_only else None
+            client = httpx.Client(transport=httpx.HTTPTransport(local_address=local))
+        self.client = client
         self.sleep = sleep
 
     def redact(self, text: str) -> str:

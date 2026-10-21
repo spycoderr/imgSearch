@@ -22,6 +22,7 @@ from imgsearch.chat.bot import (
     ChatBot,
     OriginalUnavailable,
     caption_line,
+    requested_count,
 )
 from imgsearch.chat.service import LazySearcher
 from imgsearch.config import Config
@@ -195,6 +196,42 @@ def test_more_pages_through_the_last_search(bot, messenger, config):
     # The fake retriever, like the real ones, returns at most search.per_retriever_k (10).
     bot.on_message("/more", CHAT)
     assert messenger.texts() == [NO_MORE]
+
+
+@pytest.mark.parametrize(
+    ("text", "count"),
+    [
+        ("give me 10 images of my pet dog", 10),
+        ("3 photos of the beach", 3),
+        ("top 7 dogs", 7),
+        ("mummy ki 4 tasveerein", 4),
+        ("कुत्ते की ५ तस्वीरें", 5),
+        ("50 pics", 20),  # at most chat.max_results
+        ("birthday images from 15-16 sept", None),
+        ("trip to goa 2019", None),
+        ("photos of 2 dogs", None),
+        ("0 photos", None),
+    ],
+)
+def test_requested_count(text, count):
+    assert requested_count(text, 20) == count
+
+
+def test_asking_for_ten_sends_ten_and_more_pages_by_ten(bot, messenger, config):
+    bot.on_message("give me 10 images of my pet dog", CHAT)
+    [album] = messenger.albums()
+    assert len(album) == 10
+    assert album[9][1].startswith("10 · ")
+    bot.on_message("more", CHAT)  # the search returned 10 (per_retriever_k): none left
+    assert messenger.texts() == [NO_MORE]
+
+
+def test_asking_for_three_pages_by_three(bot, messenger):
+    bot.on_message("top 3 dogs", CHAT)
+    bot.on_message("more", CHAT)
+    first, second = messenger.albums()
+    assert [c.split(" · ")[0] for _, c in first] == ["1", "2", "3"]
+    assert [c.split(" · ")[0] for _, c in second] == ["4", "5", "6"]
 
 
 def test_searches_are_kept_per_chat(bot, messenger):

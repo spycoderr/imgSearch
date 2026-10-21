@@ -152,6 +152,7 @@ class TelegramConfig(_Strict):
     poll_timeout_s: int  # long-poll wait in getUpdates
     timeout_s: float  # per request; must exceed poll_timeout_s; uploads included
     original_max_mb: float  # `original N` refuses files over this (Bot API upload limit: 50 MB)
+    ipv4_only: bool  # connect over IPv4 only (this Mac's IPv6 route to Telegram stalls)
 
 
 class WhatsAppConfig(_Strict):
