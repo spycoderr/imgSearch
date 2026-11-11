@@ -48,6 +48,47 @@ M2, M3 and M4 can be built in parallel once M1 lands.
 - **Stages are idempotent.** Re-running a stage does nothing unless its `version` changes,
   so swapping a model re-runs only that stage.
 
+## Memory while searching (P1.9)
+
+This section backports upstream P1.9/P1.9.1 only. Memory/recall numbers below are
+upstream measurements, not measurements of this checkout. Faces and near-duplicate
+features added separately upstream are outside this backport.
+
+Search (CLI and bot) loads only SigLIP's **text tower**, on the CPU in float32, with the
+checkpoint's SentencePiece tokenizer (`imgsearch/models/siglip.py: SiglipTextEmbedder`). The
+weights stay memory-mapped from the Hugging Face cache, so the search process holds about
+0.4 GB instead of 2.2 GB, and its query vectors equal the full model's. The embed stage still
+loads the full model on `mps`.
+
+Settings (`config.yaml`):
+- `models.embedder.query_device` (`cpu`) and `query_dtype` (`float32`): the text tower's
+  device and dtype at search time. float16 and `mps` give the same vectors but use more memory.
+- `models.rewriter.num_ctx` (4096): Ollama's context length for the rewrite. The rewrite
+  needs at most ~870 tokens; a smaller value saves little (0.09 GB on `qwen2.5:7b`).
+- `eval.memory_queries`: the 10 fixed queries of `bench-memory`.
+
+```sh
+uv run imgsearch bench-memory                   # 10 searches as the bot runs them
+uv run imgsearch bench-memory --searches 50     # leak check: memory after 50 searches
+uv run imgsearch check-query-vectors --run eval/runs/<run>   # query vectors vs the full model
+uv run imgsearch --config config.other.yaml bench-memory     # compare a variant config
+```
+
+- `bench-memory` unloads the rewriter from Ollama, loads the searcher, runs the queries, then
+  unloads. It prints the search process's peak memory footprint (incl. Metal), Ollama's
+  resident memory, cold and warm latency, and memory before loading and after unloading, and
+  writes `eval/runs/memory-<time>.json`. Take `data/heavy.lock` and run nothing else heavy
+  meanwhile (the bot idle).
+- `check-query-vectors` loads the full model and the text tower (~2.5 GB) and prints the
+  lowest cosine between their vectors on the eval queries (plus the English rewrites of an
+  eval run with `--run`) and how many token ids differ from the HF tokenizer's.
+- **The rewriter is `gemma3:4b`** (P1.9.1, the user's choice). It holds about 2.3 GB in
+  Ollama instead of 4.6 GB for `qwen2.5:7b` (5.1 → 2.7 GB in all while searching), rewrites
+  Hinglish better, and a warm search is ~0.5 s slower (~2.1 s). See `docs/eval/baseline-p1.9.md`
+  and `docs/reports/P1.9.1.md`. To go back, set `models.rewriter.name: "qwen2.5:7b"` and
+  restart the bot.
+
+
 ## Requirements
 
 - macOS on Apple Silicon (built for a Mac mini M4, 16GB)
@@ -59,7 +100,7 @@ M2, M3 and M4 can be built in parallel once M1 lands.
   | --- | --- | --- |
   | Image/text embeddings | `google/siglip2-base-patch16-384` | Hugging Face cache |
   | Captions | `mlx-community/Qwen3-VL-4B-Instruct-4bit` | Hugging Face cache |
-  | Query rewrite | `qwen2.5:7b` | Ollama |
+  | Query rewrite | `gemma3:4b` | Ollama |
   | OCR | Apple Vision (built into macOS) | none to download |
 
 ## Setup
@@ -68,7 +109,7 @@ M2, M3 and M4 can be built in parallel once M1 lands.
 uv sync                          # create .venv from uv.lock
 uv run hf download google/siglip2-base-patch16-384
 uv run hf download mlx-community/Qwen3-VL-4B-Instruct-4bit
-ollama pull qwen2.5:7b
+ollama pull gemma3:4b
 ```
 
 Then tell the project where the external drive's storage folder is:
@@ -349,7 +390,7 @@ into a `ParsedQuery`: `english`, `original`, `people`, `date_range` and `place`.
 prints it as JSON, followed by the time taken. `imgsearch search` calls it first (M5).
 
 - It needs Ollama 0.40.6 or later (`brew services start ollama`) and the model pulled:
-  `ollama pull qwen2.5:7b`.
+  `ollama pull gemma3:4b`.
 - Settings live in `config.yaml` under `models.rewriter`: `name` (the Ollama model), `url`,
   `timeout_s` and `prompt` (the system prompt, with four few-shot examples).
 - It calls Ollama's `/api/chat` with `stream: false` and temperature 0, and passes the output
@@ -357,8 +398,9 @@ prints it as JSON, followed by the time taken. `imgsearch search` calls it first
   validated with pydantic. `original` is always the exact input, set by code.
 - Any failure (Ollama down, timeout, HTTP error, invalid JSON, schema mismatch, empty
   `english`) logs a warning and returns the query unchanged as both `english` and `original`.
-- Ollama keeps the model loaded for its default 5 minutes after the last call (about 4.6 GB).
-  A cold call takes about 5–9 s, a warm one about 1.7 s (see `docs/benchmarks.md`).
+- Ollama keeps the model loaded for its default 5 minutes after the last call.
+  With `gemma3:4b`, upstream reports about 2.25 GB resident and about 2 s for warm rewrites
+  (see `docs/benchmarks.md` for the measured setup).
 - `eval/rewrite_examples.yaml` holds 21 example queries (11 Hinglish, 5 Devanagari,
   5 English; M5 added "kal wali shaadi ki photos") with hand-written expected rewrites; `docs/reports/M6.md` shows the outputs.
 - **Dates (P1.7).** The prompt's `{today}` placeholder is filled with today's weekday and
@@ -428,17 +470,17 @@ searched as given, and the first line says `rewrite skipped: <reason>`.
 - `--no-rewrite` searches the query as given. `--signals text` uses full-text search only;
   `--signals vector,text` uses both. `--signals text --no-rewrite` loads no model and needs no Ollama
   (about 0.4 s).
-- A full search loads SigLIP (about 6 s per command), then takes about 1.7 s warm, almost
-  all of it the rewrite. The first query after 5 idle minutes waits 5–9 s for Ollama to
-  load the model.
+- Search loads only the SigLIP text tower on CPU, then uses `gemma3:4b` for rewriting.
+  Upstream reports about 2.1 s warm query time; startup and a cold rewriter add latency.
+  See "Memory while searching (P1.9)" for the measurement context.
 - In code, build once and reuse: `searcher = open_searcher(config, conn)` (the config's
   default signals, or pass `signals=[...]`), then
   `searcher.search(query, k=None, rewrite=True, signals=None)` returns a `SearchResponse`.
   That holds the `ParsedQuery` searched, the `Result`s and the timings
   (`imgsearch/search/hybrid.py`).
-- **Memory: don't search while a caption run is going.** Search holds about 2.2 GB
-  (SigLIP) plus 4.6 GB in Ollama, and `imgsearch run caption` needs 4–6 GB. Together
-  that is too much for 16 GB.
+- **Memory: don't search while a caption run is going.** Upstream reports about 0.48 GB
+  for the search process plus 2.25 GB in Ollama (`gemma3:4b`); captioning needs 4–6 GB.
+  These are source-project measurements; benchmark this checkout separately.
 
 ## Storage on the pen drive, import and update (P1.5-A)
 

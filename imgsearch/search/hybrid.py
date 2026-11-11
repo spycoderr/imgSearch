@@ -179,9 +179,10 @@ def open_searcher(
         if name not in signals:
             continue
         if name == vector.SIGNAL:
-            from imgsearch.models.siglip import SiglipEmbedder  # loads torch: import only here
+            # Loads torch: import only here. Text tower only (P1.9).
+            from imgsearch.models.siglip import SiglipTextEmbedder
 
-            embedder = SiglipEmbedder(config.models.embedder)
+            embedder = SiglipTextEmbedder(config.models.embedder)
             retrievers[name] = vector.VectorRetriever(conn, embedder, config.models.embedder)
         else:
             retrievers[name] = text.TextRetriever(conn)

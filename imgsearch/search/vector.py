@@ -6,7 +6,7 @@ import numpy as np
 import sqlite_vec
 
 from imgsearch.config import EmbedderConfig
-from imgsearch.interfaces import Candidate, Embedder, ParsedQuery
+from imgsearch.interfaces import Candidate, ParsedQuery, TextEmbedder
 from imgsearch.search.filters import filter_sql
 
 SIGNAL = "vector"
@@ -20,7 +20,7 @@ class VectorRetriever:
     """
 
     def __init__(
-        self, conn: sqlite3.Connection, embedder: Embedder, config: EmbedderConfig
+        self, conn: sqlite3.Connection, embedder: TextEmbedder, config: EmbedderConfig
     ) -> None:
         self.conn = conn
         self.embedder = embedder

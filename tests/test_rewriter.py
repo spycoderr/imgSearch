@@ -58,7 +58,7 @@ def test_request_shape(config: Config):
     body = json.loads(request.content)
     assert body["model"] == cfg.name
     assert body["stream"] is False
-    assert body["options"] == {"temperature": 0}
+    assert body["options"] == {"temperature": 0, "num_ctx": cfg.num_ctx}  # num_ctx: P1.9
     assert body["format"] == OUTPUT_SCHEMA
     assert body["messages"] == [
         {"role": "system", "content": system_prompt(cfg.prompt)},

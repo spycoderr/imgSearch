@@ -25,8 +25,11 @@ class _Strict(BaseModel):
 class EmbedderConfig(_Strict):
     name: str
     dim: int
-    device: str
+    device: str  # image embedding (the embed stage)
     text_max_length: int
+    # Search loads only the text tower, on its own device and dtype (P1.9).
+    query_device: str
+    query_dtype: Literal["float32", "float16"]
 
 
 class CaptionerConfig(_Strict):
@@ -45,6 +48,7 @@ class RewriterConfig(_Strict):
     url: str
     timeout_s: float
     prompt: str  # system prompt for the rewrite LLM; `{today}` is replaced by today's date
+    num_ctx: int  # Ollama context length; the KV cache is sized for it (P1.9)
     # Words and phrases that name a date (month, weekday, "kal", "last week", ...). The
     # model's date_range is kept only if the query has a digit date or one of these.
     date_words: list[str]
@@ -137,6 +141,7 @@ class PlacesConfig(_Strict):
 class EvalPaths(_Strict):
     queries: Path
     runs_dir: Path
+    memory_queries: Path  # the fixed queries of `imgsearch bench-memory` (P1.9)
 
 
 class S3Config(_Strict):
@@ -235,7 +240,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH, env_file: Path = DEFAULT_ENV_F
         data["inboxes"] = [resolve(p) for p in data["inboxes"]]
     if "dir" in data.get("places", {}):
         data["places"]["dir"] = resolve(data["places"]["dir"])
-    for key in ("queries", "runs_dir"):
+    for key in ("queries", "runs_dir", "memory_queries"):
         if key in data.get("eval", {}):
             data["eval"][key] = resolve(data["eval"][key])
     for key in ("bucket", "profile"):  # account-specific names live in .env, not the repo

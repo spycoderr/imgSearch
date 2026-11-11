@@ -165,3 +165,42 @@ with no other model running. Ollama was emptied with `ollama stop` first.
 | Eval process peak memory footprint (`/usr/bin/time -l`) | 2.24 GB |
 | Ollama resident | 4.6 GB |
 | Contact sheet size (130 thumbnails embedded once) | 2.2 MB |
+
+## P1.9: memory while searching
+
+The following measurements are preserved from upstream through `c797888`. They were
+not rerun on this backport, which excludes upstream faces and near-duplicate features.
+
+`imgsearch bench-memory`: the searcher as the bot builds it (`open_searcher` with the config's defaults), 10
+fixed queries (`eval/memory-queries.txt`: 4 English, 4 Hinglish, 2 Hindi), rewriter unloaded from Ollama first.
+Peak footprint = `proc_pid_rusage` lifetime max (includes Metal); Ollama = `/api/ps` size. Lock held, bot idle.
+
+On the merged code (`7096e35`, 2026-11-11), DB copy of the main DB (14,871 photos):
+
+| Measure | Before P1.9 (main `bb05d21`, 1,445 photos) | Text tower, CPU fp32 + `qwen2.5:7b` (default) | Text tower + `gemma3:4b` |
+| --- | ---: | ---: | ---: |
+| Searcher load | 2.5–4.2 s | 3.50 s | 3.20 s |
+| First search, cold rewriter | 8.6–10.7 s | 10.09 s | 6.86 s |
+| Warm search, median / max | 1.72 / 2.12 s | 1.55 / 2.03 s | 2.08 / 2.46 s |
+| Search process peak footprint | 2.24 GB | **0.48 GB** | 0.48 GB |
+| Ollama rewriter resident (ctx 4096) | 4.65 GB | 4.65 GB | 2.25 GB |
+| **Total while searching** | **6.89 GB** | **5.13 GB** | **2.73 GB** |
+| Footprint before load → after unload | 73 MB → 1.72 GB | 74 → 446 MB | 74 → 446 MB |
+| Run record | `memory-20261024-211821.json`, `-211904.json` | `memory-20261111-234832.json` | `memory-20261111-235049.json` |
+
+- A query embedding on the CPU takes ~0.02 s (9 ms on mps); the rest of a warm search is the rewrite.
+- After the unload ~0.37 GB stays in the process: torch and transformers imports (~0.28 GB) and Python/SQLite.
+  50 searches leave the same residue as 10 (+303 MB both, 1,445-photo copy), so nothing grows per search.
+- Query-side variants (1,445-photo copy, `qwen2.5:7b`): text tower mps fp32 1.62 GB, mps fp16 2.10 GB, CPU fp16
+  0.97 GB, CPU fp32 0.42 GB (the default). float16 copies the weights; mps keeps ~1 GB of Metal buffers after
+  `empty_cache`.
+- Rewriters (1,445-photo copy): `qwen2.5:3b` 2.09 GB in Ollama (warm search 0.77 s), `gemma3:4b` 2.25 GB,
+  `qwen2.5:7b` 4.65 GB (4.56 GB at num_ctx 1536). Recall in `docs/eval/baseline-p1.9.md`.
+
+### P1.9.1: `gemma3:4b` is the default (2026-11-12)
+
+`imgsearch bench-memory` with the committed config (`gemma3:4b`, num_ctx 4096, prompt with the P1.9.1 sentence),
+DB copy of 15,016 photos, lock held, bot idle (`memory-20261112-002310.json`): searcher load 3.21 s, first search
+4.05 s (`gemma3:4b` was loaded in Ollama before the run, from the evals; P1.9 measured 6.86 s from an empty
+Ollama), warm median / max 2.10 / 2.35 s, search process peak 0.48 GB, Ollama 2.25 GB, **total while
+searching 2.73 GB**, footprint before load → after unload 74 → 445 MB. Same as P1.9's `gemma3:4b` column.

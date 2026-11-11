@@ -131,9 +131,14 @@ class Stage(Protocol):
     def unload(self) -> None: ...  # free memory; also called if load or run failed
 
 
-class Embedder(Protocol):
-    def embed_images(self, paths: list[Path]) -> np.ndarray: ...
+class TextEmbedder(Protocol):
+    """Query side (P1.9): search embeds text only, so it needs no image model."""
+
     def embed_text(self, text: str) -> np.ndarray: ...
+
+
+class Embedder(TextEmbedder, Protocol):
+    def embed_images(self, paths: list[Path]) -> np.ndarray: ...
 
 
 class OCREngine(Protocol):

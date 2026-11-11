@@ -16,8 +16,14 @@ models:
   embedder:
     name: google/siglip2-base-patch16-384
     dim: 768
-    device: mps
+    device: mps           # image embedding (the embed stage)
     text_max_length: 64   # model card: pad/truncate text to 64 tokens, as in training
+    # Search (P1.9) loads only the text tower. On the CPU in float32 its weights stay
+    # memory-mapped from the HF cache, so search's footprint fell from 2.24 GB to ~0.4 GB;
+    # a query takes ~0.02 s. float16 gives the same vectors (cosine >= 0.99999) but more
+    # memory, since the cast makes a copy (docs/reports/P1.9.md).
+    query_device: cpu
+    query_dtype: float32
   captioner:
     name: mlx-community/Qwen3-VL-4B-Instruct-4bit
     prompt: >-
@@ -30,9 +36,10 @@ models:
     # tokens. An area cap (not a long edge) keeps panoramas tall enough to read.
     max_pixels: 1048576  # 1024 x 1024
   rewriter:
-    name: "qwen2.5:7b"
+    name: "gemma3:4b"  # P1.9.1: smaller rewriter; see docs/reports/P1.9.1.md
     url: "http://localhost:11434"
     timeout_s: 30  # a cold start loads the model first
+    num_ctx: 4096  # Ollama's context length (its KV cache); 4096 was Ollama's default (P1.9)
     prompt: |
       You rewrite search queries for a personal photo library. A query can be in English,
       Hindi (Devanagari script) or Hinglish (Hindi written in Latin letters, often mixed
@@ -43,7 +50,8 @@ models:
         word, and keep every object, food, animal, person, place and action the query
         mentions. Relations become English words (mummy -> mom, papa -> dad, dadi ->
         grandma, bhai -> brother). Keep names of people and places as written, in Latin
-        letters. If the query is already in English, copy it exactly, word for word,
+        letters. Hindi has no words for "a" and "the": don't add them unless the query
+        has them. If the query is already in English, copy it exactly, word for word,
         keeping "the", "a" and every other word.
       - people: the humans the query mentions, by name or relation (for example "mummy",
         "Rahul", "dadi"), exactly as written in the query. Animals and objects are not
@@ -154,6 +162,7 @@ places:
 eval:
   queries: eval/queries.yaml   # the labelled query set
   runs_dir: eval/runs          # one folder per run; git-ignored (personal photos)
+  memory_queries: eval/memory-queries.txt  # `imgsearch bench-memory`: memory while searching (P1.9)
 
 # Originals' primary home (plan D19, P1.6): S3 Glacier Instant Retrieval, encrypted on the Mac
 # (AES-256-GCM; the key is in the macOS Keychain). The bucket name and the AWS profile come

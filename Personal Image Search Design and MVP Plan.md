@@ -473,3 +473,22 @@ Model names, library behaviour and platform policies in this doc come from gener
 3. Where face naming should live: the WhatsApp bot, a local page, or both (decide at P5).
 4. SSD instead of HDD for originals if budget allows; the design works with either.
 5. Whether a second copy of the originals will exist before the HDD migration.
+
+## Search memory backport (P1.9 / P1.9.1, 2026-11-12)
+
+Imported the RAM-related changes from upstream through `c797888`; faces, named-person
+search, near-duplicate grouping and OnePlus batch operations are not part of this backport.
+
+- Search loads `SiglipTextEmbedder` only: the SigLIP text tower on CPU float32, with the
+  checkpoint's SentencePiece tokenizer. Image indexing still uses the full model on MPS.
+- `TextEmbedder` is the query-side protocol; `Embedder` extends it with image embedding.
+- Rewriter default is `gemma3:4b`, `num_ctx: 4096`, with the upstream article-preservation
+  prompt fix. Run `ollama pull gemma3:4b` before querying.
+- Added `bench-memory` and `check-query-vectors` CLI commands and their tests.
+- Upstream reports total search memory 6.89 -> 5.13 -> 2.73 GB (about 60% lower overall).
+  These are upstream measurements, not a local benchmark of this backport. Their later
+  14,871/15,016-photo evaluations also include features outside this backport, so their
+  full recall figures must not be treated as measurements of this checkout.
+- Upstream reports and evaluation evidence are preserved verbatim under `docs/reports/`
+  and `docs/eval/baseline-p1.9.md`; dates, authorship and operational statements in them
+  describe the source project.

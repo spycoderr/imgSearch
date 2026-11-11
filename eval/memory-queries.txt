@@ -1,0 +1,12 @@
+# The fixed queries of `imgsearch bench-memory` (P1.9): memory and latency while searching.
+# Taken from eval/queries.yaml: 4 English, 4 Hinglish, 2 Hindi; none names a date.
+white dog sitting on a carpet
+Indian Institute of Technology Delhi
+give me some images of people dressed for wedding
+Mussoorie mall road at night
+goa trip ki photos
+kabootar sadak pe
+Rajasthani khana thaali mein
+hare dupatte mein aurat mahal ke garden ke saamne
+सफेद कुत्ता
+पहाड़ों का दृश्य

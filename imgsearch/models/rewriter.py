@@ -131,7 +131,7 @@ class OllamaRewriter:
                     {"role": "user", "content": query},
                 ],
                 "format": OUTPUT_SCHEMA,
-                "options": {"temperature": 0},
+                "options": {"temperature": 0, "num_ctx": self.config.num_ctx},
                 "stream": False,
             },
             timeout=self.config.timeout_s,
